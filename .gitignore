@@ -67,7 +67,10 @@ papers/downloaded/
 papers/temp/
 papers/cache/
 
-
+sections/
+sections/*
+review/ 
+review/*
 papers/*
 papers/links_only/
 papers/links_only/*.txt
