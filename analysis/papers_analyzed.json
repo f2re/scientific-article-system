@@ -1,0 +1,32 @@
+{
+  "Hersbach2020": {
+    "title": "The ERA5 global reanalysis",
+    "authors": ["Hersbach, H.", "Bell, B.", "Berrisford, P.", "et al."],
+    "year": 2020,
+    "journal": "QJRMS",
+    "summary": "Describes ERA5, a comprehensive reanalysis providing hourly data on many atmospheric parameters. It assimilates vast amounts of historical observations. Key for ground truth in high-altitude profiling.",
+    "methodology": "4D-Var data assimilation",
+    "results": "Significantly improved accuracy in the stratosphere compared to ERA-Interim.",
+    "relevance_score": 10
+  },
+  "Lam2023": {
+    "title": "Learning skillful medium-range global weather forecasting",
+    "authors": ["Lam, R.", "Sanchez-Gonzalez, A.", "Willson, M.", "et al."],
+    "year": 2023,
+    "journal": "Science",
+    "summary": "Introduces GraphCast, a GNN-based weather forecasting model. Demonstrates that ML can outperform traditional NWP in some metrics.",
+    "methodology": "Graph Neural Networks (GNN)",
+    "results": "State-of-the-art performance for 10-day forecasts, capturing vertical structure effectively.",
+    "relevance_score": 9
+  },
+  "Dirksen2014": {
+    "title": "Reference quality upper-air measurements: GRUAN data processing for the Vaisala RS92 radiosonde",
+    "authors": ["Dirksen, R. J.", "Sommer, M.", "Immler, F. J.", "et al."],
+    "year": 2014,
+    "journal": "AMT",
+    "summary": "Details the processing and uncertainty quantification for GRUAN radiosonde data. Critical for understanding input data limitations.",
+    "methodology": "Uncertainty propagation, bias correction",
+    "results": "Established reference quality profiles for validation.",
+    "relevance_score": 8
+  }
+}
