@@ -1,0 +1,110 @@
+# Git Attributes for Scientific Article System
+# ============================================
+# Defines how Git handles different file types
+
+# ====================
+# Text Files
+# ====================
+# Ensure consistent line endings
+*.md text eol=lf
+*.txt text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+
+# ====================
+# Markdown
+# ====================
+# Article sections and documentation
+*.md text diff=markdown linguist-documentation
+sections/*.md text diff=markdown
+README.md text diff=markdown
+CLAUDE.md text diff=markdown
+MULTI_AGENT_PLAN.md text diff=markdown
+
+# Russian language articles
+FINAL_ARTICLE.md text diff=markdown linguist-language=Markdown
+sections/introduction.md text diff=markdown
+sections/methods.md text diff=markdown
+sections/results.md text diff=markdown
+sections/discussion.md text diff=markdown
+
+# ====================
+# Python
+# ====================
+*.py text diff=python linguist-language=Python
+tools/**/*.py text diff=python
+
+# ====================
+# JSON
+# ====================
+# Catalogs and metadata
+*.json text diff=json
+papers/papers_catalog.json text diff=json
+analysis/papers_analyzed.json text diff=json
+review/feedback.json text diff=json
+
+# ====================
+# Binary Files
+# ====================
+# PDFs (do not diff, treat as binary)
+*.pdf binary
+*.PDF binary
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+
+# Archives
+*.zip binary
+*.tar binary
+*.gz binary
+*.rar binary
+*.7z binary
+
+# Data files
+*.hdf5 binary
+*.nc binary
+*.zarr binary
+
+# Model files
+*.pt binary
+*.pth binary
+*.h5 binary
+*.pkl binary
+
+# ====================
+# Git LFS (Large File Storage)
+# ====================
+# Track large files with Git LFS if available
+# Uncomment if using Git LFS:
+# *.pdf filter=lfs diff=lfs merge=lfs -text
+# *.zip filter=lfs diff=lfs merge=lfs -text
+# *.h5 filter=lfs diff=lfs merge=lfs -text
+# *.pkl filter=lfs diff=lfs merge=lfs -text
+
+# ====================
+# Export Ignore
+# ====================
+# Exclude from git archive
+.gitignore export-ignore
+.gitattributes export-ignore
+.github/ export-ignore
+tests/ export-ignore
+docs/ export-ignore
+*.md export-ignore README.md
+
+# ====================
+# Diff Configuration
+# ====================
+# Custom diff drivers for specific files
+*.ipynb diff=jupyternotebook

@@ -1,0 +1,277 @@
+# Scientific Article System - Git Ignore File
+# ================================================
+
+# ====================
+# Python
+# ====================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+
+# ====================
+# Downloaded Papers & PDFs
+# ====================
+# Downloaded PDF files (can be large)
+papers/downloaded/*.pdf
+papers/downloaded/
+
+# Temporary paper storage
+papers/temp/
+papers/cache/
+
+
+papers/*
+papers/links_only/
+papers/links_only/*.txt
+# ====================
+# Generated Outputs
+# ====================
+# Search logs and temporary files
+papers/*.log
+papers/search_log*.txt
+papers/search_execution*.log
+*.log
+
+# Temporary Python scripts (agent-generated)
+papers/*.py
+papers/atmospheric_*.py
+papers/paper_searcher*.py
+papers/*_search*.py
+
+# Temporary catalogs (keep final ones)
+papers/*_temp.json
+papers/*_backup.json
+papers/temp_*.json
+
+# Analysis intermediates
+analysis/temp/
+analysis/*.tmp
+analysis/cache/
+
+# ====================
+# Article Drafts & Intermediates
+# ====================
+# Keep main sections but ignore drafts
+sections/*_draft.md
+sections/*_backup.md
+sections/.*.swp
+
+# Review intermediates
+review/temp/
+review/*_draft.json
+
+# Backup files
+*.bak
+*~
+*.swp
+*.swo
+
+# ====================
+# IDE & Editor Files
+# ====================
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# JupyterLab / Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# ====================
+# Operating System Files
+# ====================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+# ====================
+# Credentials & Secrets
+# ====================
+# API keys and credentials
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+credentials.json
+secrets.json
+config/secrets.*
+
+# Personal notes
+PRIVATE_NOTES.md
+TODO_PERSONAL.md
+notes/private/
+
+# ====================
+# Large Data Files
+# ====================
+# Datasets
+data/*.csv
+data/*.hdf5
+data/*.nc
+data/*.zarr
+
+# Model files
+models/*.pt
+models/*.pth
+models/*.h5
+models/*.pkl
+models/*.joblib
+
+# Compressed archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# ====================
+# Temporary & Cache Files
+# ====================
+tmp/
+temp/
+cache/
+*.tmp
+*.cache
+
+# Search API cache
+.search_cache/
+papers/.cache/
+
+# ====================
+# Documentation Build
+# ====================
+docs/_build/
+docs/.doctrees/
+site/
+
+# ====================
+# Project-Specific
+# ====================
+# Experimental scripts
+experiments/
+sandbox/
+scratch/
+
+# User-specific query files (keep templates)
+papers/my_queries.txt
+papers/*_personal.txt
+
+# Local configuration overrides
+input/research_config_local.md
+.claude/agents/*_local.md
+
+# Output archives (keep latest, ignore archives)
+output_archive/
+backups/
+
+# ====================
+# Keep These Files (Documentation)
+# ====================
+# These are explicitly NOT ignored - just for reference:
+# .claude/agents/*.md          - Agent definitions
+# tools/article_search/*.py    - Search tools
+# tools/README.md              - Tool documentation
+# input/research_config.md     - Research configuration
+# papers/papers_catalog.json   - Main catalog
+# papers/SEARCH_REPORT.md      - Search reports
+# sections/*.md                - Article sections
+# FINAL_ARTICLE.md             - Final output
+# README.md, CLAUDE.md         - Documentation
+# MULTI_AGENT_PLAN.md         - Orchestration guide
+
+# ====================
+# Exceptions (Force Include)
+# ====================
+# Keep example files even if they match ignore patterns
+!papers/example_queries.txt
+!tools/examples/*.py
+!input/research_config.example.md
+
+# Keep important logs for debugging
+!papers/COMPLETION_STATUS.txt
+!papers/search_plan.md
