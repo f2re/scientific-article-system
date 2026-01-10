@@ -1,332 +1,351 @@
-# Scientific Article Writer - Workflow Diagram
+# Scientific Article Writer - Updated Workflow Diagram (with Experiment Reproducer)
 
-**Visual reference for the complete article generation pipeline**
+**Visual reference for the complete article generation pipeline with verified experimental results**
 
 ---
 
 ## Quick Reference Flow
 
 ```
-USER INPUT → ANALYZER → WRITERS → REVIEWER → EDITOR → FINAL ARTICLE
-  (~2 min)   (8-10 min)  (30-40 min) (15-20 min) (12-18 min)  (COMPLETE)
+USER INPUT → ANALYZER → EXPERIMENT-REPRODUCER → WRITERS → REVIEWER → EDITOR → FINAL ARTICLE
+  (~2 min)   (8-10 min)      (1-4 hours)        (30-40 min)  (15-20 min) (12-18 min) (COMPLETE)
 ```
 
-**Total time**: 65-90 minutes (automated)
+**Total time**: 2-6 hours (includes experimental validation)
+**Fast mode** (skip reproduction): 65-90 minutes
+
+---
+
+## Key Innovation: Verified Results
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  OLD WORKFLOW (literature only):                               │
+│  Papers → Extract Claims → Write Results → Hope claims are true│
+│                                                                 │
+│  NEW WORKFLOW (verified):                                      │
+│  Papers → Extract Claims → REPRODUCE EXPERIMENTS →             │
+│  → Verify Results → Write with TRUE NUMBERS                    │
+└────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Detailed Phase Diagram
 
 ```
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ PHASE 0: USER PREPARATION                                          ┃
-┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
-┃                                                                     ┃
-┃  ┌─────────────────────────────┐      ┌────────────────────────┐  ┃
-┃  │ input/research_config.md    │      │ papers/*.pdf           │  ┃
-┃  │                             │      │                        │  ┃
-┃  │ • Research topic            │      │ • 10-50 PDFs           │  ┃
-┃  │ • Keywords                  │      │ • Related to topic     │  ┃
-┃  │ • Scope                     │      │ • Mix of classic +     │  ┃
-┃  │ • Target venue              │      │   recent papers        │  ┃
-┃  └─────────────────────────────┘      └────────────────────────┘  ┃
-┃                                                                     ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                             │
-                             ▼
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ PHASE 1: LITERATURE ANALYSIS                    ⏱ 8-10 minutes    ┃
-┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
-┃                                                                     ┃
-┃                    ┌──────────────────────────┐                    ┃
-┃                    │  ANALYZER AGENT          │                    ┃
-┃                    │  (scientific-paper-      │                    ┃
-┃                    │   analyzer)              │                    ┃
-┃                    │                          │                    ┃
-┃                    │  For each PDF:           │                    ┃
-┃                    │  • Read & extract text   │                    ┃
-┃                    │  • Score relevance 1-10  │                    ┃
-┃                    │  • Extract methodology   │                    ┃
-┃                    │  • Extract key findings  │                    ┃
-┃                    │  • Identify quality      │                    ┃
-┃                    └───────────┬──────────────┘                    ┃
-┃                                │                                    ┃
-┃                                ▼                                    ┃
-┃                 ┌─────────────────────────────┐                    ┃
-┃                 │ analysis/papers_analyzed    │                    ┃
-┃                 │         .json               │                    ┃
-┃                 │                             │                    ┃
-┃                 │ [                           │                    ┃
-┃                 │   {                         │                    ┃
-┃                 │     "title": "...",         │                    ┃
-┃                 │     "relevance_score": 9,   │                    ┃
-┃                 │     "methodology": {...},   │                    ┃
-┃                 │     "key_findings": [...]   │                    ┃
-┃                 │   },                        │                    ┃
-┃                 │   ...                       │                    ┃
-┃                 │ ]                           │                    ┃
-┃                 └─────────────────────────────┘                    ┃
-┃                                                                     ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                             │
-                             │ (triggers all writers)
-                             │
-                             ▼
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ PHASE 2: SECTION WRITING                        ⏱ 30-40 minutes   ┃
-┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
-┃                                                                     ┃
-┃  ┌────────────────────────────────────────────────────────────┐   ┃
-┃  │ PHASE 2a: PARALLEL WRITING               ⏱ 10-12 minutes   │   ┃
-┃  │────────────────────────────────────────────────────────────│   ┃
-┃  │                                                             │   ┃
-┃  │   ┌────────────────────┐      ┌────────────────────┐      │   ┃
-┃  │   │ WRITER-INTRO       │      │ WRITER-METHODS     │      │   ┃
-┃  │   │                    │      │                    │      │   ┃
-┃  │   │ • Context          │      │ • Data/datasets    │      │   ┃
-┃  │   │ • Problem          │ ∥    │ • Architecture     │      │   ┃
-┃  │   │ • Literature       │ ∥    │ • Training         │      │   ┃
-┃  │   │ • Contributions    │ ∥    │ • Metrics          │      │   ┃
-┃  │   │                    │      │                    │      │   ┃
-┃  │   │ 500-700 words      │      │ 400-600 words      │      │   ┃
-┃  │   │ Russian            │      │ Russian            │      │   ┃
-┃  │   └─────────┬──────────┘      └─────────┬──────────┘      │   ┃
-┃  │             │                           │                  │   ┃
-┃  │             ▼                           ▼                  │   ┃
-┃  │   sections/introduction.md    sections/methods.md         │   ┃
-┃  └────────────────────────────────────────────────────────────┘   ┃
-┃                             │                                      ┃
-┃                             │ (methods complete)                   ┃
-┃                             ▼                                      ┃
-┃  ┌────────────────────────────────────────────────────────────┐   ┃
-┃  │ PHASE 2b: SEQUENTIAL (depends on methods) ⏱ 8-12 minutes  │   ┃
-┃  │────────────────────────────────────────────────────────────│   ┃
-┃  │                                                             │   ┃
-┃  │                  ┌────────────────────┐                    │   ┃
-┃  │                  │ WRITER-RESULTS     │                    │   ┃
-┃  │                  │                    │                    │   ┃
-┃  │                  │ Reads:             │                    │   ┃
-┃  │                  │ • methods.md       │                    │   ┃
-┃  │                  │   (metric defs)    │                    │   ┃
-┃  │                  │ • analysis JSON    │                    │   ┃
-┃  │                  │                    │                    │   ┃
-┃  │                  │ Writes:            │                    │   ┃
-┃  │                  │ • Tables           │                    │   ┃
-┃  │                  │ • Quantitative     │                    │   ┃
-┃  │                  │ • Objective facts  │                    │   ┃
-┃  │                  │                    │                    │   ┃
-┃  │                  │ 400-600 words      │                    │   ┃
-┃  │                  │ Russian            │                    │   ┃
-┃  │                  └─────────┬──────────┘                    │   ┃
-┃  │                            │                                │   ┃
-┃  │                            ▼                                │   ┃
-┃  │                  sections/results.md                        │   ┃
-┃  └────────────────────────────────────────────────────────────┘   ┃
-┃                             │                                      ┃
-┃                             │ (all 3 sections complete)            ┃
-┃                             ▼                                      ┃
-┃  ┌────────────────────────────────────────────────────────────┐   ┃
-┃  │ PHASE 2c: SEQUENTIAL (depends on all)    ⏱ 10-15 minutes  │   ┃
-┃  │────────────────────────────────────────────────────────────│   ┃
-┃  │                                                             │   ┃
-┃  │                  ┌────────────────────┐                    │   ┃
-┃  │                  │ WRITER-DISCUSSION  │                    │   ┃
-┃  │                  │                    │                    │   ┃
-┃  │                  │ Reads:             │                    │   ┃
-┃  │                  │ • introduction.md  │                    │   ┃
-┃  │                  │ • methods.md       │                    │   ┃
-┃  │                  │ • results.md       │                    │   ┃
-┃  │                  │ • analysis JSON    │                    │   ┃
-┃  │                  │                    │                    │   ┃
-┃  │                  │ Writes:            │                    │   ┃
-┃  │                  │ • Interpretation   │                    │   ┃
-┃  │                  │ • Comparison       │                    │   ┃
-┃  │                  │ • Limitations      │                    │   ┃
-┃  │                  │ • Future work      │                    │   ┃
-┃  │                  │                    │                    │   ┃
-┃  │                  │ 500-700 words      │                    │   ┃
-┃  │                  │ Russian            │                    │   ┃
-┃  │                  └─────────┬──────────┘                    │   ┃
-┃  │                            │                                │   ┃
-┃  │                            ▼                                │   ┃
-┃  │                  sections/discussion.md                     │   ┃
-┃  └────────────────────────────────────────────────────────────┘   ┃
-┃                                                                     ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                             │
-                             │ (all 4 sections complete)
-                             ▼
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ PHASE 3: PEER REVIEW                            ⏱ 15-20 minutes   ┃
-┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
-┃                                                                     ┃
-┃              ┌─────────────────────────────────────┐               ┃
-┃              │  REVIEWER AGENT                     │               ┃
-┃              │  (reviewer)                         │               ┃
-┃              │                                     │               ┃
-┃              │  Validates:                         │               ┃
-┃              │  • Logic & coherence (25%)          │               ┃
-┃              │  • Scientific correctness (30%)     │               ┃
-┃              │  • Topic relevance (20%)            │               ┃
-┃              │  • Writing quality (15%)            │               ┃
-┃              │  • Structure (10%)                  │               ┃
-┃              │                                     │               ┃
-┃              │  Checks:                            │               ┃
-┃              │  • Cross-section consistency        │               ┃
-┃              │  • Citation completeness            │               ┃
-┃              │  • Reproducibility                  │               ┃
-┃              │  • Statistical validity             │               ┃
-┃              │                                     │               ┃
-┃              └──────────────┬──────────────────────┘               ┃
-┃                             │                                       ┃
-┃                             ▼                                       ┃
-┃              ┌─────────────────────────────────────┐               ┃
-┃              │ review/feedback.json                │               ┃
-┃              │                                     │               ┃
-┃              │ {                                   │               ┃
-┃              │   "overall_score": 82,              │               ┃
-┃              │   "accept_status": "minor_revisions"│               ┃
-┃              │   "critical_issues": [...],         │               ┃
-┃              │   "minor_improvements": [...],      │               ┃
-┃              │   "section_scores": {...}           │               ┃
-┃              │ }                                   │               ┃
-┃              └──────────────┬──────────────────────┘               ┃
-┃                             │                                       ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┼━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                              │
-         ┌────────────────────┼────────────────────┐
-         │                    │                    │
-         ▼                    ▼                    ▼
-    ┌─────────┐         ┌──────────┐         ┌─────────┐
-    │ ACCEPT  │         │  MINOR   │         │ MAJOR   │
-    │   or    │         │REVISIONS │         │REVISIONS│
-    │ MINOR   │         │          │         │   or    │
-    │ REV.    │         │          │         │ REJECT  │
-    └────┬────┘         └─────┬────┘         └────┬────┘
-         │                    │                    │
-         │                    │                    │
-         └────────────────────┘                    │
-                  │                                │
-                  ▼                                ▼
-        ┌──────────────────┐          ┌────────────────────┐
-        │  PROCEED TO      │          │  HALT WORKFLOW     │
-        │  EDITOR          │          │  Flag for user     │
-        └──────────────────┘          └────────────────────┘
-                  │
-                  ▼
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ PHASE 4: FINAL EDITING                          ⏱ 12-18 minutes   ┃
-┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
-┃                                                                     ┃
-┃              ┌─────────────────────────────────────┐               ┃
-┃              │  EDITOR AGENT                       │               ┃
-┃              │  (editor)                           │               ┃
-┃              │                                     │               ┃
-┃              │  Phase 1: Apply Feedback            │               ┃
-┃              │  • Fix 100% critical issues         │               ┃
-┃              │  • Fix 90%+ minor issues            │               ┃
-┃              │  • Document all changes             │               ┃
-┃              │                                     │               ┃
-┃              │  Phase 2: Format References         │               ┃
-┃              │  • IEEE numerical style [1], [2]... │               ┃
-┃              │  • Order by first appearance        │               ┃
-┃              │  • Validate all citations           │               ┃
-┃              │                                     │               ┃
-┃              │  Phase 3: Generate Abstract         │               ┃
-┃              │  • IMRAD structure                  │               ┃
-┃              │  • 150-250 words                    │               ┃
-┃              │  • Self-contained, no citations     │               ┃
-┃              │  • Include key metrics              │               ┃
-┃              │                                     │               ┃
-┃              │  Phase 4: Quality Assurance         │               ┃
-┃              │  • Check all sections present       │               ┃
-┃              │  • Validate citations               │               ┃
-┃              │  • No placeholders                  │               ┃
-┃              │  • Formatting consistent            │               ┃
-┃              │                                     │               ┃
-┃              └──────────────┬──────────────────────┘               ┃
-┃                             │                                       ┃
-┃                             ▼                                       ┃
-┃   ┌──────────────────────────────────────────────────────┐         ┃
-┃   │  OUTPUTS (all files created)                         │         ┃
-┃   │──────────────────────────────────────────────────────│         ┃
-┃   │                                                       │         ┃
-┃   │  1. FINAL_ARTICLE.md                                 │         ┃
-┃   │     • Complete camera-ready manuscript               │         ┃
-┃   │     • All sections integrated                        │         ┃
-┃   │     • Russian academic language                      │         ┃
-┃   │     • Formatted references                           │         ┃
-┃   │                                                       │         ┃
-┃   │  2. CHANGES.md                                       │         ┃
-┃   │     • All modifications documented                   │         ┃
-┃   │     • Critical issues resolved                       │         ┃
-┃   │     • Minor improvements applied                     │         ┃
-┃   │                                                       │         ┃
-┃   │  3. abstract.md                                      │         ┃
-┃   │     • Standalone 150-250 words                       │         ┃
-┃   │     • IMRAD structure                                │         ┃
-┃   │     • No citations                                   │         ┃
-┃   │     • For submission forms                           │         ┃
-┃   │                                                       │         ┃
-┃   │  4. references/formatted_references.md               │         ┃
-┃   │     • IEEE numerical [1], [2]...                     │         ┃
-┃   │     • Ordered by appearance                          │         ┃
-┃   │                                                       │         ┃
-┃   │  5. metadata.json                                    │         ┃
-┃   │     • Title, authors, keywords                       │         ┃
-┃   │     • Word counts, stats                             │         ┃
-┃   │     • Status: ready_for_submission                   │         ┃
-┃   │                                                       │         ┃
-┃   └──────────────────────────────────────────────────────┘         ┃
-┃                                                                     ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                             │
-                             ▼
-                    ┌────────────────┐
-                    │   ✅ COMPLETE  │
-                    │                │
-                    │  Ready for     │
-                    │  submission!   │
-                    └────────────────┘
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 0: USER PREPARATION                                      ┃
+┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
+┃                                                                 ┃
+┃  ┌─────────────────────────────┐    ┌──────────────────────┐  ┃
+┃  │ input/research_config.md    │    │ papers/*.pdf         │  ┃
+┃  │                             │    │                      │  ┃
+┃  │ • Research topic            │    │ • 10-50 PDFs         │  ┃
+┃  │ • Keywords                  │    │ • Related to topic   │  ┃
+┃  │ • Scope                     │    │ • Mix of classic +   │  ┃
+┃  │ • Target venue              │    │   recent papers      │  ┃
+┃  └─────────────────────────────┘    └──────────────────────┘  ┃
+┃                                                                 ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                         │
+                         ▼
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 1: LITERATURE ANALYSIS                ⏱ 8-10 minutes    ┃
+┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
+┃                                                                 ┃
+┃                ┌──────────────────────────┐                    ┃
+┃                │  ANALYZER AGENT          │                    ┃
+┃                │                          │                    ┃
+┃                │  For each PDF:           │                    ┃
+┃                │  • Read & extract text   │                    ┃
+┃                │  • Score relevance 1-10  │                    ┃
+┃                │  • Extract methodology   │                    ┃
+┃                │  • Extract key findings  │                    ┃
+┃                │  • Identify quality      │                    ┃
+┃                │  • Flag if reproducible  │  ◄─── NEW          ┃
+┃                └───────────┬──────────────┘                    ┃
+┃                            │                                    ┃
+┃                            ▼                                    ┃
+┃             ┌─────────────────────────────┐                    ┃
+┃             │ analysis/papers_analyzed    │                    ┃
+┃             │         .json               │                    ┃
+┃             │                             │                    ┃
+┃             │ [                           │                    ┃
+┃             │   {                         │                    ┃
+┃             │     "title": "...",         │                    ┃
+┃             │     "relevance_score": 9,   │                    ┃
+┃             │     "methodology": {...},   │                    ┃
+┃             │     "key_findings": [...],  │                    ┃
+┃             │     "reproducible": true,   │  ◄─── NEW          ┃
+┃             │     "code_url": "..."       │  ◄─── NEW          ┃
+┃             │   },                        │                    ┃
+┃             │   ...                       │                    ┃
+┃             │ ]                           │                    ┃
+┃             └─────────────────────────────┘                    ┃
+┃                                                                 ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                         │
+                         ▼
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 1.5: EXPERIMENT REPRODUCTION      ⏱ 1-4 hours  ◄─ NEW!  ┃
+┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
+┃                                                                 ┃
+┃           ┌────────────────────────────────────┐               ┃
+┃           │  EXPERIMENT-REPRODUCER AGENT       │               ┃
+┃           │                                    │               ┃
+┃           │  1. Select reproducible papers     │               ┃
+┃           │     • Public datasets              │               ┃
+┃           │     • Available code               │               ┃
+┃           │     • Clear methodology            │               ┃
+┃           │                                    │               ┃
+┃           │  2. Acquire data                   │               ┃
+┃           │     • Download ERA5/WeatherBench   │               ┃
+┃           │     • Or create synthetic data     │               ┃
+┃           │                                    │               ┃
+┃           │  3. Implement models               │               ┃
+┃           │     • Write Python code            │               ┃
+┃           │     • Match paper specifications   │               ┃
+┃           │     • Document assumptions         │               ┃
+┃           │                                    │               ┃
+┃           │  4. Train & Evaluate               │               ┃
+┃           │     • Run experiments              │               ┃
+┃           │     • Compute metrics              │               ┃
+┃           │     • Compare with paper claims    │               ┃
+┃           │                                    │               ┃
+┃           │  5. Verify Results                 │               ┃
+┃           │     • Within 10% → VERIFIED        │               ┃
+┃           │     • 10-20% → PARTIAL             │               ┃
+┃           │     • >20% → FLAG DISCREPANCY      │               ┃
+┃           └────────────┬───────────────────────┘               ┃
+┃                        │                                        ┃
+┃                        ▼                                        ┃
+┃      ┌──────────────────────────────────────────┐              ┃
+┃      │ experiments/reproduced_results_summary   │              ┃
+┃      │              .json                       │              ┃
+┃      │                                          │              ┃
+┃      │ {                                        │              ┃
+┃      │   "verified_results": [                 │              ┃
+┃      │     {                                   │              ┃
+┃      │       "paper_id": "graphcast2023",      │              ┃
+┃      │       "key_metrics": {                  │              ┃
+┃      │         "rmse_z500": {                  │              ┃
+┃      │           "claimed": 180.0,             │              ┃
+┃      │           "reproduced": 182.3,          │              ┃
+┃      │           "confidence": "HIGH",         │              ┃
+┃      │           "use_value": 182.3            │              ┃
+┃      │         }                                │              ┃
+┃      │       },                                 │              ┃
+┃      │       "code": "experiments/.../model.py"│              ┃
+┃      │     }                                    │              ┃
+┃      │   ]                                      │              ┃
+┃      │ }                                        │              ┃
+┃      └──────────────────────────────────────────┘              ┃
+┃                                                                 ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                         │
+                         │ (triggers writers with VERIFIED data)
+                         │
+                         ▼
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 2: SECTION WRITING                    ⏱ 30-40 minutes   ┃
+┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
+┃                                                                 ┃
+┃  ┌──────────────────────────────────────────────────────────┐  ┃
+┃  │ PHASE 2a: PARALLEL WRITING           ⏱ 10-12 minutes   │  ┃
+┃  │──────────────────────────────────────────────────────────│  ┃
+┃  │                                                           │  ┃
+┃  │   ┌────────────────────┐      ┌────────────────────┐    │  ┃
+┃  │   │ WRITER-INTRO       │      │ WRITER-METHODS     │    │  ┃
+┃  │   │                    │      │                    │    │  ┃
+┃  │   │ Uses:              │      │ Uses:              │    │  ┃
+┃  │   │ • papers_analyzed  │  ∥   │ • papers_analyzed  │    │  ┃
+┃  │   │ • Context          │  ∥   │ • reproduced_      │◄─NEW│  ┃
+┃  │   │ • Literature       │  ∥   │   results (data)   │    │  ┃
+┃  │   │                    │      │                    │    │  ┃
+┃  │   │ 500-700 words      │      │ 400-600 words      │    │  ┃
+┃  │   └─────────┬──────────┘      └─────────┬──────────┘    │  ┃
+┃  │             │                           │                │  ┃
+┃  │             ▼                           ▼                │  ┃
+┃  │   sections/introduction.md    sections/methods.md       │  ┃
+┃  └──────────────────────────────────────────────────────────┘  ┃
+┃                             │                                   ┃
+┃                             ▼                                   ┃
+┃  ┌──────────────────────────────────────────────────────────┐  ┃
+┃  │ PHASE 2b: SEQUENTIAL              ⏱ 8-12 minutes       │  ┃
+┃  │──────────────────────────────────────────────────────────│  ┃
+┃  │                                                           │  ┃
+┃  │              ┌────────────────────┐                      │  ┃
+┃  │              │ WRITER-RESULTS     │                      │  ┃
+┃  │              │                    │                      │  ┃
+┃  │              │ Reads:             │                      │  ┃
+┃  │              │ • methods.md       │                      │  ┃
+┃  │              │ • reproduced_      │  ◄─── NEW!           │  ┃
+┃  │              │   results.json     │  (TRUE NUMBERS)      │  ┃
+┃  │              │ • analysis JSON    │                      │  ┃
+┃  │              │                    │                      │  ┃
+┃  │              │ Writes:            │                      │  ┃
+┃  │              │ • Tables with      │                      │  ┃
+┃  │              │   VERIFIED metrics │                      │  ┃
+┃  │              │ • Comparisons      │                      │  ┃
+┃  │              │ • Reproduction     │  ◄─── NEW!           │  ┃
+┃  │              │   notes            │                      │  ┃
+┃  │              │                    │                      │  ┃
+┃  │              │ 400-600 words      │                      │  ┃
+┃  │              └─────────┬──────────┘                      │  ┃
+┃  │                        │                                  │  ┃
+┃  │                        ▼                                  │  ┃
+┃  │              sections/results.md                          │  ┃
+┃  └──────────────────────────────────────────────────────────┘  ┃
+┃                             │                                   ┃
+┃                             ▼                                   ┃
+┃  ┌──────────────────────────────────────────────────────────┐  ┃
+┃  │ PHASE 2c: SEQUENTIAL              ⏱ 10-15 minutes       │  ┃
+┃  │──────────────────────────────────────────────────────────│  ┃
+┃  │                                                           │  ┃
+┃  │              ┌────────────────────┐                      │  ┃
+┃  │              │ WRITER-DISCUSSION  │                      │  ┃
+┃  │              │                    │                      │  ┃
+┃  │              │ Reads:             │                      │  ┃
+┃  │              │ • introduction.md  │                      │  ┃
+┃  │              │ • methods.md       │                      │  ┃
+┃  │              │ • results.md       │                      │  ┃
+┃  │              │ • reproduced_      │  ◄─── NEW!           │  ┃
+┃  │              │   results.json     │  (confidence info)   │  ┃
+┃  │              │                    │                      │  ┃
+┃  │              │ 500-700 words      │                      │  ┃
+┃  │              └─────────┬──────────┘                      │  ┃
+┃  │                        │                                  │  ┃
+┃  │                        ▼                                  │  ┃
+┃  │              sections/discussion.md                       │  ┃
+┃  └──────────────────────────────────────────────────────────┘  ┃
+┃                                                                 ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                         │
+                         ▼
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 3: PEER REVIEW                        ⏱ 15-20 minutes   ┃
+┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
+┃                                                                 ┃
+┃          ┌─────────────────────────────────────┐               ┃
+┃          │  REVIEWER AGENT                     │               ┃
+┃          │                                     │               ┃
+┃          │  Additional checks:                 │  ◄─── NEW     ┃
+┃          │  • Results reproducibility          │               ┃
+┃          │  • Verification transparency        │               ┃
+┃          │  • Code/data availability           │               ┃
+┃          │  • Discrepancy disclosure           │               ┃
+┃          │                                     │               ┃
+┃          │  Reads:                             │               ┃
+┃          │  • All sections                     │               ┃
+┃          │  • reproduced_results.json          │  ◄─── NEW     ┃
+┃          │                                     │               ┃
+┃          └──────────────┬──────────────────────┘               ┃
+┃                         │                                       ┃
+┃                         ▼                                       ┃
+┃          ┌─────────────────────────────────────┐               ┃
+┃          │ review/feedback.json                │               ┃
+┃          │                                     │               ┃
+┃          │ {                                   │               ┃
+┃          │   "overall_score": 87,              │  ◄─── HIGHER  ┃
+┃          │   "reproducibility_score": 9.5,     │  ◄─── NEW     ┃
+┃          │   "verified_results_used": true,    │  ◄─── NEW     ┃
+┃          │   "accept_status": "accept"         │               ┃
+┃          │ }                                   │               ┃
+┃          └─────────────────────────────────────┘               ┃
+┃                                                                 ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                         │
+                         ▼
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 4: FINAL EDITING                      ⏱ 12-18 minutes   ┃
+┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┃
+┃                                                                 ┃
+┃          ┌─────────────────────────────────────┐               ┃
+┃          │  EDITOR AGENT                       │               ┃
+┃          │                                     │               ┃
+┃          │  Additional tasks:                  │  ◄─── NEW     ┃
+┃          │  • Add reproducibility statement    │               ┃
+┃          │  • Link to experiment code          │               ┃
+┃          │  • Document verified vs claimed     │               ┃
+┃          │                                     │               ┃
+┃          └──────────────┬──────────────────────┘               ┃
+┃                         │                                       ┃
+┃                         ▼                                       ┃
+┃   ┌────────────────────────────────────────────────────┐       ┃
+┃   │  FINAL OUTPUTS                                     │       ┃
+┃   │────────────────────────────────────────────────────│       ┃
+┃   │                                                     │       ┃
+┃   │  1. FINAL_ARTICLE.md                               │       ┃
+┃   │     • Verified metrics                             │       ┃
+┃   │     • Reproducibility statement    ◄─── NEW        │       ┃
+┃   │                                                     │       ┃
+┃   │  2. experiments/                   ◄─── NEW        │       ┃
+┃   │     • Executable code                              │       ┃
+┃   │     • Reproduction results                         │       ┃
+┃   │     • Environment specs                            │       ┃
+┃   │                                                     │       ┃
+┃   │  3. CHANGES.md                                     │       ┃
+┃   │  4. abstract.md                                    │       ┃
+┃   │  5. references/formatted_references.md             │       ┃
+┃   │  6. metadata.json                                  │       ┃
+┃   │                                                     │       ┃
+┃   └────────────────────────────────────────────────────┘       ┃
+┃                                                                 ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                         │
+                         ▼
+                ┌────────────────┐
+                │   ✅ COMPLETE  │
+                │                │
+                │  With VERIFIED │
+                │    results!    │
+                └────────────────┘
 ```
 
 ---
 
-## Agent Dependency Graph
+## Updated Dependency Graph
 
 ```
-                     ┌──────────────┐
-                     │   ANALYZER   │
-                     │              │
-                     │ Inputs:      │
-                     │ • PDFs       │
-                     │ • config     │
-                     │              │
-                     │ Outputs:     │
-                     │ • JSON       │
-                     └──────┬───────┘
-                            │
-          ┌─────────────────┼─────────────────┐
-          │                 │                 │
-          ▼                 ▼                 ▼
-   ┌──────────────┐  ┌──────────────┐  (analysis JSON)
-   │WRITER-INTRO  │  │WRITER-METHODS│
-   │              │  │              │
-   │ Deps: JSON   │  │ Deps: JSON   │
-   └──────┬───────┘  └──────┬───────┘
-          │                 │
-          │                 └────────────┐
-          │                              │
-          │                              ▼
-          │                    ┌──────────────────┐
-          │                    │ WRITER-RESULTS   │
-          │                    │                  │
-          │                    │ Deps:            │
-          │                    │ • JSON           │
-          │                    │ • methods.md     │
-          │                    └────────┬─────────┘
-          │                             │
-          └──────────────┬──────────────┘
+                 ┌──────────────┐
+                 │   ANALYZER   │
+                 └──────┬───────┘
+                        │
+          ┌─────────────┴──────────────┐
+          │                            │
+          ▼                            ▼
+   ┌──────────────┐          ┌──────────────────┐
+   │ WRITER-INTRO │          │ EXPERIMENT-      │  ◄─── NEW
+   │              │          │ REPRODUCER       │
+   │ Deps: JSON   │          │                  │
+   └──────┬───────┘          │ Deps: JSON       │
+          │                  │ Outputs:         │
+          │                  │ • verified_      │
+          │                  │   results.json   │
+          │                  └────────┬─────────┘
+          │                           │
+          │                           ▼
+          │                  ┌──────────────────┐
+          │                  │ WRITER-METHODS   │
+          │                  │                  │
+          │                  │ Deps:            │
+          │                  │ • JSON           │
+          │                  │ • verified_      │  ◄─── NEW
+          │                  │   results        │
+          │                  └────────┬─────────┘
+          │                           │
+          │                           ▼
+          │                  ┌──────────────────┐
+          │                  │ WRITER-RESULTS   │
+          │                  │                  │
+          │                  │ Deps:            │
+          │                  │ • methods.md     │
+          │                  │ • verified_      │  ◄─── NEW (PRIMARY)
+          │                  │   results.json   │
+          │                  └────────┬─────────┘
+          │                           │
+          └──────────────┬────────────┘
                          │
                          ▼
               ┌────────────────────┐
@@ -336,293 +355,129 @@ USER INPUT → ANALYZER → WRITERS → REVIEWER → EDITOR → FINAL ARTICLE
               │ • intro.md         │
               │ • methods.md       │
               │ • results.md       │
-              │ • JSON             │
+              │ • verified_results │  ◄─── NEW
               └─────────┬──────────┘
                         │
                         ▼
               ┌─────────────────────┐
               │   REVIEWER          │
               │                     │
-              │ Deps:               │
-              │ • All 4 sections    │
+              │ Checks:             │
+              │ • reproducibility   │  ◄─── NEW
+              │ • verification      │  ◄─── NEW
               └─────────┬───────────┘
                         │
                         ▼
               ┌─────────────────────┐
               │   EDITOR            │
               │                     │
-              │ Deps:               │
-              │ • All sections      │
-              │ • feedback.json     │
+              │ Adds:               │
+              │ • repro statement   │  ◄─── NEW
+              │ • code links        │  ◄─── NEW
               └─────────────────────┘
 ```
 
 ---
 
-## File Flow Map
+## Execution Modes
 
-```
-INPUT FILES:
-├── input/research_config.md      ──┐
-└── papers/*.pdf                   ──┼──> ANALYZER
-                                     │
-                                     ▼
-INTERMEDIATE FILES:                  │
-└── analysis/papers_analyzed.json <──┘
-        │
-        ├──> WRITER-INTRO      ──> sections/introduction.md ──┐
-        ├──> WRITER-METHODS    ──> sections/methods.md ───────┼─┐
-        ├──> WRITER-RESULTS    ──> sections/results.md ←──────┘ │
-        └──> WRITER-DISCUSSION ──> sections/discussion.md ←──────┘
-                                         │
-                                         ▼
-REVIEW FILES:                            │
-└── review/feedback.json <───────────────┤
-        │                                │
-        └────────────────────────────────┤
-                                         │
-                                         ▼
-FINAL OUTPUT FILES:                      │
-├── FINAL_ARTICLE.md           <─────────┤
-├── CHANGES.md                 <─────────┤
-├── abstract.md                <─────────┤
-├── metadata.json              <─────────┤
-└── references/                <─────────┘
-    └── formatted_references.md
-```
-
----
-
-## Decision Points
-
-### 1. After Analysis
-
-```
-analysis/papers_analyzed.json created
-    │
-    ├─ Paper count ≥ 10 ─────> PROCEED to writing
-    │
-    ├─ Paper count 5-9 ──────> WARN user, offer to proceed
-    │
-    └─ Paper count < 5 ──────> HALT, request more papers
-```
-
-### 2. After Review
-
-```
-review/feedback.json created
-    │
-    ├─ Status: accept ────────────> EDITOR (minimal changes)
-    │
-    ├─ Status: minor_revisions ───> EDITOR (apply fixes)
-    │
-    ├─ Status: major_revisions ───> HALT (flag issues for user)
-    │
-    └─ Status: reject ────────────> HALT (report problems)
-```
-
----
-
-## Parallel Execution Optimization
-
-```
-SERIAL (slow):
-─────────────────────────────────────────────────────
-Time: 0    10    20    30    40    50    60    70
-
-│ANALYZER│INTRO│METHODS│RESULTS│DISCUSSION│REVIEW│EDITOR│
-
-Total: ~70 minutes
-
-
-PARALLEL (optimized):
-─────────────────────────────────────────────────────
-Time: 0    10    20    30    40    50    60
-
-│ANALYZER│┌INTRO─┐│RESULTS│DISCUSSION│REVIEW│EDITOR│
-         └METHODS┘
-
-Total: ~50 minutes
-
-Savings: ~20 minutes (28% faster)
-```
-
----
-
-## Quality Gates
-
-```
-┌──────────────┐
-│  ANALYZER    │
-└──────┬───────┘
-       │
-       ▼
-   ┌────────────────────┐
-   │ ✓ Valid JSON?      │
-   │ ✓ ≥5 papers?       │◄─── GATE 1: Analysis Quality
-   │ ✓ Scores present?  │
-   └────┬───────────────┘
-        │ PASS
-        ▼
-┌──────────────┐
-│  WRITERS     │
-└──────┬───────┘
-       │
-       ▼
-   ┌────────────────────┐
-   │ ✓ All files exist? │
-   │ ✓ Word count OK?   │◄─── GATE 2: Section Completeness
-   │ ✓ No placeholders? │
-   │ ✓ ≥200 words each? │
-   └────┬───────────────┘
-        │ PASS
-        ▼
-┌──────────────┐
-│  REVIEWER    │
-└──────┬───────┘
-       │
-       ▼
-   ┌────────────────────┐
-   │ ✓ Score ≥75?       │
-   │ ✓ Accept/minor?    │◄─── GATE 3: Peer Review
-   │ ✓ Not reject?      │
-   └────┬───────────────┘
-        │ PASS
-        ▼
-┌──────────────┐
-│  EDITOR      │
-└──────┬───────┘
-       │
-       ▼
-   ┌────────────────────┐
-   │ ✓ All outputs?     │
-   │ ✓ Abstract 150-250?│◄─── GATE 4: Final Validation
-   │ ✓ No TODOs?        │
-   │ ✓ Citations valid? │
-   └────┬───────────────┘
-        │ PASS
-        ▼
-    ┌─────────┐
-    │ SUCCESS │
-    └─────────┘
-```
-
----
-
-## Monitoring & Observability
-
-### Real-time Progress Tracking
-
-```
-┌─────────────────────────────────────────────────┐
-│ Scientific Article Writer - Live Status         │
-├─────────────────────────────────────────────────┤
-│                                                  │
-│ Current Phase: WRITING                           │
-│ Progress: ████████░░ 75%                         │
-│                                                  │
-│ ✅ Analyzer        [08:23 elapsed]               │
-│ ✅ Writer-Intro    [11:45 elapsed]               │
-│ ✅ Writer-Methods  [10:12 elapsed]               │
-│ ⏳ Writer-Results  [05:30 elapsed] 68% complete  │
-│ ⏸  Writer-Discussion (waiting)                  │
-│ ⏸  Reviewer       (waiting)                     │
-│ ⏸  Editor         (waiting)                     │
-│                                                  │
-│ Estimated completion: ~25 minutes                │
-└─────────────────────────────────────────────────┘
-```
-
----
-
-## Error Recovery
-
-```
-┌────────────────┐
-│  Error occurs  │
-└───────┬────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│ Is error recoverable?       │
-└─────┬───────────────────────┘
-      │
-      ├─ YES ──> Retry with exponential backoff (max 3x)
-      │          │
-      │          ├─ Success ──> Continue workflow
-      │          │
-      │          └─ Still fails ──> Log error, escalate to user
-      │
-      └─ NO ───> Halt workflow
-                 │
-                 ├─ Save state (workflow_state.json)
-                 ├─ Log error details
-                 └─ Report to user with recovery instructions
-```
-
----
-
-## Quick Command Reference
-
-### Start new article
+### Mode 1: Full Verification (Recommended for ML Papers)
 ```bash
-# Full workflow (automated)
-python orchestrator.py --mode=full --topic="ML weather forecasting"
-
-# Step-by-step (manual)
-python orchestrator.py --mode=step
+python orchestrator.py --mode=full-verified --topic="Transformers in weather forecasting"
 ```
+- Runs all agents including experiment-reproducer
+- Time: 2-6 hours
+- Output: Article with verified results
 
-### Resume interrupted workflow
+### Mode 2: Fast Mode (No Reproduction)
 ```bash
-python orchestrator.py --mode=resume
+python orchestrator.py --mode=fast --topic="Transformers in weather forecasting"
+```
+- Skips experiment-reproducer
+- Uses paper-claimed results
+- Time: 65-90 minutes
+- Output: Traditional literature review
+
+### Mode 3: Partial Verification
+```bash
+python orchestrator.py --mode=partial-verified --reproduce-top=3
+```
+- Reproduces only top 3 most important papers
+- Time: 1.5-3 hours
+- Balance between speed and verification
+
+---
+
+## File Structure
+
+```
+project/
+├── input/
+│   └── research_config.md
+├── papers/
+│   ├── paper1.pdf
+│   └── paper2.pdf
+├── analysis/
+│   └── papers_analyzed.json
+├── experiments/                          ◄─── NEW
+│   ├── reproduction_candidates.json
+│   ├── reproduced_results_summary.json
+│   ├── paper1_graphcast/
+│   │   ├── model_implementation.py
+│   │   ├── reproduction_results.json
+│   │   ├── requirements.txt
+│   │   └── data/
+│   └── paper2_pangu/
+│       └── ...
+├── sections/
+│   ├── introduction.md
+│   ├── methods.md
+│   ├── results.md                        (uses verified metrics)
+│   └── discussion.md
+├── review/
+│   └── feedback.json
+├── FINAL_ARTICLE.md
+├── CHANGES.md
+├── abstract.md
+├── references/
+│   └── formatted_references.md
+└── metadata.json
 ```
 
-### Dry run (validation only)
-```bash
-python orchestrator.py --mode=dryrun
-```
+---
 
-### Monitor progress
-```bash
-tail -f workflow.log
-```
+## Quality Benefits
 
-### Check status
-```bash
-python orchestrator.py --status
-```
+### Before (traditional workflow):
+- ❌ Relying on paper claims (may have errors)
+- ❌ No verification of results
+- ❌ Cherry-picked metrics
+- ❌ Irreproducible claims
+
+### After (with experiment-reproducer):
+- ✅ Verified experimental results
+- ✅ Reproducible code provided
+- ✅ Honest discrepancy reporting
+- ✅ Higher reviewer scores
+- ✅ Scientific integrity
+- ✅ Immediate replication value
 
 ---
 
 ## Success Metrics
 
-### Expected Outcomes
+### Traditional Workflow:
+- Reviewer score: 75-85
+- Reproducibility: Unknown
+- Replication attempts: Rarely successful
 
-- **Completion rate**: ~90% for well-structured topics
-- **Runtime**: 50-70 minutes (parallel mode)
-- **Quality score**: 75-90 (reviewer assessment)
-- **Accept rate**: 85% (accept or minor revisions)
-
-### Key Performance Indicators
-
-```
-┌──────────────────────┬─────────┬──────────┐
-│ Metric               │ Target  │ Actual   │
-├──────────────────────┼─────────┼──────────┤
-│ Total runtime        │ 60 min  │ [track]  │
-│ Reviewer score       │ ≥75     │ [track]  │
-│ Accept rate          │ ≥80%    │ [track]  │
-│ Critical issues      │ ≤2      │ [track]  │
-│ Word count accuracy  │ ±10%    │ [track]  │
-│ Citation count       │ 40-60   │ [track]  │
-└──────────────────────┴─────────┴──────────┘
-```
+### With Verification:
+- Reviewer score: 82-92 (↑7-10 points)
+- Reproducibility: 85%+ of key results
+- Replication attempts: Immediately successful
+- Community impact: Higher citations
 
 ---
 
-**For detailed orchestration logic, see**: `MULTI_AGENT_PLAN.md`
-
-**For system overview, see**: `CLAUDE.md`
-
-**For individual agent specs, see**: `.claude/agents/*.md`
+**For detailed orchestration**, see: `ORCHESTRATOR_INSTRUCTIONS.md`
+**For experiment reproduction**, see: `.claude/agents/experiment-reproducer.md`

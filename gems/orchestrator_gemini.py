@@ -162,7 +162,9 @@ def run_agent(agent_name, input_context, output_file=None, model_id="gemini-2.5-
         content = response.text
         
         if output_file:
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            directory = os.path.dirname(output_file)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(content)
             print(f"✅ Output saved to {output_file}")
