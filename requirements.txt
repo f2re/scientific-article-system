@@ -1,0 +1,11 @@
+numpy
+pandas
+xarray
+torch
+matplotlib
+scipy
+sounderpy
+metpy
+requests
+feedparser
+netCDF4

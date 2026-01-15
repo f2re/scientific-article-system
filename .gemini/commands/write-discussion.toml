@@ -1,0 +1,25 @@
+description = "Write discussion section (500-700 words, Russian)"
+
+prompt = """
+Load workflow instructions from @.gemini/workflows/writer-discussion.md
+
+Preconditions:
+- sections/introduction.md, sections/methods.md, sections/results.md must exist
+
+Context files to load:
+- @sections/introduction.md
+- @sections/methods.md
+- @sections/results.md
+- @analysis/papers_analyzed.json
+
+Tasks:
+1. Load all previous sections
+2. Write discussion section following IMRAD structure
+3. Interpret results, compare with literature, acknowledge limitations
+4. Ensure 500-700 words in Russian academic style
+5. Self-assess quality (target: 8-10/10)
+6. Save to sections/discussion.md
+
+Language: Russian (formal academic)
+Citation style: IEEE numerical
+"""

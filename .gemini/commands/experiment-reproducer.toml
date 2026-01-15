@@ -1,0 +1,18 @@
+description = "Reproduce or simulate experiments based on configuration"
+
+prompt = """
+Load workflow instructions from @.gemini/workflows/experiment-reproducer.md
+
+Context files to load:
+- @input/research_config.md
+- @sections/methods.md (if available)
+
+Tasks:
+1. Analyze research configuration and methods
+2. Generate code to reproduce or simulate the experiment
+3. Execute the code (if environment permits) or provide instructions
+4. Document results and performance metrics
+5. Save outputs to experiments/ directory
+
+Language: Python (for code), English/Russian (for documentation)
+"""

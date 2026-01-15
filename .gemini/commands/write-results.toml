@@ -1,0 +1,23 @@
+description = "Write results section (400-600 words, Russian)"
+
+prompt = """
+Load workflow instructions from @.gemini/workflows/writer-results.md
+
+Preconditions:
+- sections/methods.md must exist
+
+Context files to load:
+- @analysis/papers_analyzed.json
+- @sections/methods.md
+
+Tasks:
+1. Load context and methods section
+2. Write results section following IMRAD structure
+3. Present findings clearly, referring to methods
+4. Ensure 400-600 words in Russian academic style
+5. Self-assess quality (target: 8-10/10)
+6. Save to sections/results.md
+
+Language: Russian (formal academic)
+Citation style: IEEE numerical
+"""

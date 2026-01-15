@@ -1,0 +1,26 @@
+description = "Peer review complete draft with quality scoring"
+
+prompt = """
+Load workflow instructions from @.gemini/workflows/reviewer.md
+
+Preconditions check:
+- All 4 sections must exist: introduction.md, methods.md, results.md, discussion.md
+- Each section must have >200 words
+- No [TODO], [TBD], or placeholder text
+
+Context files to load:
+- @sections/introduction.md
+- @sections/methods.md
+- @sections/results.md
+- @sections/discussion.md
+- @references/formatted_references.md (if exists)
+
+Tasks:
+1. Evaluate each section on 10-point scale
+2. Check coherence, citations, reproducibility
+3. Identify Type A (critical), Type B (minor), Type C (major) issues
+4. Provide recommendation: accept / minor_revisions / major_revisions / reject
+5. Save structured feedback to review/feedback.json
+
+Output: JSON with scores, issues arrays, and recommendation.
+"""

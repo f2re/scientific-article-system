@@ -1,0 +1,19 @@
+description = "Analyze literature PDFs and extract structured data"
+
+prompt = """
+Load workflow instructions from @.gemini/workflows/analyzer.md
+
+Context files to load:
+- @input/research_config.md
+- @papers/ (all PDFs)
+
+Tasks:
+1. Read all PDFs in papers/ directory
+2. Extract: title, authors, year, methodology, key results, relevance scores
+3. Structure output as JSON per analyzer.md specifications
+4. Save to analysis/papers_analyzed.json
+5. Validate JSON structure before completion
+
+Output format: Follow template in analyzer.md exactly.
+Language: Russian for summaries, English for metadata.
+"""

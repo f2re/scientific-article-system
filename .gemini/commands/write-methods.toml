@@ -1,0 +1,25 @@
+description = "Write methods section (400-600 words, Russian)"
+
+prompt = """
+Load workflow instructions from @.gemini/workflows/writer-methods.md
+
+Preconditions:
+- sections/introduction.md must exist
+- analysis/papers_analyzed.json must exist
+
+Context files to load:
+- @analysis/papers_analyzed.json
+- @input/research_config.md
+- @sections/introduction.md
+
+Tasks:
+1. Load context and previous section
+2. Write methods section following IMRAD structure
+3. Detail methodology, data sources, and experimental setup
+4. Ensure 400-600 words in Russian academic style
+5. Self-assess quality (target: 8-10/10)
+6. Save to sections/methods.md
+
+Language: Russian (formal academic)
+Citation style: IEEE numerical
+"""

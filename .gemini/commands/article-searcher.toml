@@ -1,0 +1,15 @@
+description = "Search for scientific articles"
+
+prompt = """
+Load workflow instructions from @.gemini/workflows/article-searcher.md
+
+Context files to load:
+- @input/research_config.md
+
+Tasks:
+1. Search for relevant scientific articles based on research config
+2. Download PDFs if possible or list links
+3. Save downloaded papers to papers/ directory
+4. Update papers/COMPLETION_STATUS.txt or similar log
+
+"""

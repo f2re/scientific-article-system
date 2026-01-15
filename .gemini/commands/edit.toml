@@ -1,0 +1,25 @@
+description = "Final edit and assembly of the article"
+
+prompt = """
+Load workflow instructions from @.gemini/workflows/editor.md
+
+Preconditions:
+- review/feedback.json must exist with 'accept' or 'minor_revisions'
+
+Context files to load:
+- @sections/introduction.md
+- @sections/methods.md
+- @sections/results.md
+- @sections/discussion.md
+- @review/feedback.json
+
+Tasks:
+1. Apply 100% of critical issues identified in review
+2. Apply >90% of minor improvements
+3. Assemble full manuscript
+4. Format references (IEEE numerical)
+5. Generate abstract and metadata
+6. Save to FINAL_ARTICLE.md, CHANGES.md, abstract.md, metadata.json
+
+Language: Russian (formal academic)
+"""
