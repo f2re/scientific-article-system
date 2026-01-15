@@ -844,6 +844,7 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 if torch.isnan(grad_norm) or torch.isinf(grad_norm):
                     print(f"  WARNING: NaN/Inf градиенты в батче {batch_idx}, пропускаем")
+                    scaler.update()  # ✓ КРИТИЧЕСКИ ВАЖНО: сбросить состояние scaler
                     optimizer.zero_grad(set_to_none=True)
                     continue
                 
