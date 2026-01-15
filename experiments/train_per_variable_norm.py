@@ -71,7 +71,7 @@ PRESSURE_LEVELS_MERRA2 = [
 ]
 
 BATCH_SIZE = 64
-MAX_EPOCHS = 100
+MAX_EPOCHS = 10
 
 # Extended pressure levels to 0.1 hPa for both sources
 # Input levels: troposphere (1000-100 hPa)
@@ -758,8 +758,8 @@ class AtmosphericDatasetPerVarNorm(Dataset):
                 var_input = profile[f'{var}_input']
                 var_output = profile[f'{var}_output']
 
-                var_input_norm = (var_input - self.stats[var]['input_mean']) / (self.stats[var]['input_std'] + 1e-8)
-                var_output_norm = (var_output - self.stats[var]['output_mean']) / (self.stats[var]['output_std'] + 1e-8)
+                var_input_norm = (var_input - self.stats[var]['input_mean']) / (self.stats[var]['input_std'] + 1e-6)
+                var_output_norm = (var_output - self.stats[var]['output_mean']) / (self.stats[var]['output_std'] + 1e-6)
 
                 input_norm.extend(var_input_norm)
                 output_norm.extend(var_output_norm)
@@ -778,103 +778,125 @@ class AtmosphericDatasetPerVarNorm(Dataset):
             torch.from_numpy(profile['input_norm']).float(),
             torch.from_numpy(profile['output_norm']).float()
         )
-def train_model(model, train_loader, val_loader, device, max_epochs, output_dir):
-    """
-    ОПТИМИЗИРОВАННАЯ функция обучения с:
-    - Mixed Precision (FP16) для ускорения на GPU
-    - Gradient accumulation для больших эффективных batch sizes
-    - Асинхронная передачa данных
-    - Прозрачная поддержка DataParallel/DistributedDataParallel (модель уже должна быть обёрнута снаружи)
-    """
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=1e-6)
+
+def train_model(model, train_loader, val_loader, device, max_epochs, output_dir):
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    
+    # ИСПРАВЛЕНИЕ #1: уменьшаем learning rate
+    optimizer = optim.Adam(model.parameters(), lr=1e-4, betas=(0.9, 0.999))  # было 1e-3
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=1e-7)
+    
     criterion = PhysicsInformedLoss(
         n_output_levels=len(OUTPUT_LEVELS),
         thermal_wind_weight=0.1,
         wind_component_weight=2.0
-    )
-
-    # Mixed precision
+    ).to(device)
+    
     use_amp = (device.type == 'cuda')
     scaler = GradScaler(enabled=use_amp)
-
-    accumulation_steps = 2  # эффективный batch = BATCH_SIZE * accumulation_steps
-
+    accumulation_steps = 2
+    
     history = {'train_loss': [], 'val_loss': [], 'learning_rate': []}
     best_val_loss = float('inf')
     best_epoch = 0
-
+    
     print(f"\nНачало обучения...")
     print(f"Mixed Precision: {'Enabled' if use_amp else 'Disabled'}")
     print(f"Gradient Accumulation: {accumulation_steps} steps")
+    print(f"Learning Rate: {optimizer.param_groups[0]['lr']}")
     print(f"Эффективный batch size: {BATCH_SIZE * accumulation_steps}\n")
-
+    
     for epoch in range(1, max_epochs + 1):
         model.train()
         train_loss = 0.0
         optimizer.zero_grad(set_to_none=True)
-
         num_train_batches = 0
-
+        
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             num_train_batches += 1
-
-            # async transfer
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
-
+            
+            # ИСПРАВЛЕНИЕ #2: проверка на NaN во входных данных
+            if torch.isnan(inputs).any() or torch.isnan(targets).any():
+                print(f"  WARNING: NaN в данных батча {batch_idx}")
+                continue
+            
             with autocast(enabled=use_amp):
                 outputs = model(inputs)
                 loss, loss_dict = criterion(outputs, targets)
-                loss = loss / accumulation_steps  # нормировка для аккумулирования
-
+                loss = loss / accumulation_steps
+            
+            # ИСПРАВЛЕНИЕ #3: проверка на NaN в loss
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"  WARNING: NaN/Inf loss в батче {batch_idx}, пропускаем")
+                optimizer.zero_grad(set_to_none=True)
+                continue
+            
             scaler.scale(loss).backward()
-
+            
+            # ИСПРАВЛЕНИЕ #4: правильная обработка gradient accumulation
             if (batch_idx + 1) % accumulation_steps == 0:
-                # gradient clipping
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
+                # Проверка градиентов на NaN перед clipping
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                if torch.isnan(grad_norm) or torch.isinf(grad_norm):
+                    print(f"  WARNING: NaN/Inf градиенты в батче {batch_idx}, пропускаем")
+                    optimizer.zero_grad(set_to_none=True)
+                    continue
+                
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
-
+            
             train_loss += loss.item() * accumulation_steps
-
+        
+        # ИСПРАВЛЕНИЕ #5: обработка остатка gradient accumulation в конце эпохи
+        if num_train_batches % accumulation_steps != 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+        
         if num_train_batches > 0:
             train_loss /= num_train_batches
         else:
             train_loss = float('nan')
-
+        
         # === ВАЛИДАЦИЯ ===
         model.eval()
         val_loss = 0.0
         num_val_batches = 0
-
+        
         with torch.no_grad():
             for inputs, targets in val_loader:
                 num_val_batches += 1
                 inputs = inputs.to(device, non_blocking=True)
                 targets = targets.to(device, non_blocking=True)
-
+                
+                if torch.isnan(inputs).any() or torch.isnan(targets).any():
+                    continue
+                
                 with autocast(enabled=use_amp):
                     outputs = model(inputs)
                     loss, loss_dict = criterion(outputs, targets)
+                
+                if not torch.isnan(loss):
                     val_loss += loss.item()
-
+        
         if num_val_batches > 0:
             val_loss /= num_val_batches
         else:
             val_loss = float('nan')
-
+        
         scheduler.step()
-
+        
         history['train_loss'].append(float(train_loss))
         history['val_loss'].append(float(val_loss))
         history['learning_rate'].append(float(optimizer.param_groups[0]['lr']))
-
+        
         if device.type == 'cuda' and epoch % 10 == 0:
             allocated = torch.cuda.memory_allocated(0) / 1e9
             reserved = torch.cuda.memory_reserved(0) / 1e9
@@ -883,8 +905,7 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
                   f"GPU: {allocated:.2f}/{reserved:.2f} GB")
         else:
             print(f"Эпоха {epoch:3d}/{max_epochs} | Train: {train_loss:.6f} | Val: {val_loss:.6f}")
-
-        # === сохранение лучшей модели ===
+        
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_epoch = epoch
@@ -896,15 +917,15 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
                 'val_loss': val_loss,
                 'train_loss': train_loss
             }, os.path.join(output_dir, 'best_model.pth'))
-            print(" -> Лучшая модель сохранена")
-
+            print("  -> Лучшая модель сохранена")
+    
     # финальная модель
     torch.save({
         'epoch': max_epochs,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict()
     }, os.path.join(output_dir, 'final_model.pth'))
-
+    
     with open(os.path.join(output_dir, 'training_history.json'), 'w') as f:
         json.dump({
             'metadata': {
@@ -915,9 +936,11 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
             },
             'history': history
         }, f, indent=2)
-
+    
     print(f"\nОбучение завершено! Лучшая эпоха: {best_epoch}\n")
     return history
+
+
 
 def main():
     # Configuration based on DATA_SOURCE

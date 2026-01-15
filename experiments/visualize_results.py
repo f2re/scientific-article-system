@@ -20,42 +20,50 @@ from model_architecture import MultiHeadAtmosphericResNet
 plt.rcParams['font.family'] = 'DejaVu Sans'
 plt.rcParams['axes.unicode_minus'] = False
 
-
 def load_model_and_stats(model_path, stats_path, config_path, device):
     """Загрузка модели, статистики нормализации и конфигурации"""
     print(f"Загрузка модели из {model_path}")
     print(f"Загрузка статистики из {stats_path}")
     print(f"Загрузка конфигурации из {config_path}")
-
+    
     with open(stats_path, 'r') as f:
         stats = json.load(f)
-
+    
     with open(config_path, 'r') as f:
         config = json.load(f)
-
+    
     input_dim = config['input_dim']
     output_dim = config['output_dim']
-    hidden_dims = config.get('hidden_dims', None)  # Load hidden_dims if present
-
-    print(f"Конфигурация: input_dim={input_dim}, output_dim={output_dim}")
-    if hidden_dims:
-        print(f"  Hidden dimensions: {hidden_dims}")
-
+    n_input_levels = config['n_variables']  # Будет 5
+    n_output_levels = config.get('n_output_levels', len(config['output_levels']))
+    
+    # ИСПРАВЛЕНИЕ: правильные параметры для MultiHeadAtmosphericResNet
+    n_input_levels = len(config['input_levels'])
+    n_output_levels = len(config['output_levels'])
+    
+    print(f"Конфигурация:")
+    print(f"  input_dim={input_dim}, output_dim={output_dim}")
+    print(f"  n_input_levels={n_input_levels}, n_output_levels={n_output_levels}")
+    
+    # Создаем модель с правильными параметрами
     model = MultiHeadAtmosphericResNet(
         input_dim=input_dim,
         output_dim=output_dim,
-        hidden_dims=hidden_dims,  # Use hidden_dims from config
-        dropout_rate=0.1,
-        use_batch_norm=True,
-        activation='gelu'
+        n_input_levels=n_input_levels,
+        n_output_levels=n_output_levels,
+        dropout_rate=0.2  # Используется в MultiHeadAtmosphericResNet
     )
-
+    
+    # Загружаем веса
     checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
-    model.train(False)
-
+    model.eval()  # Переводим в режим inference (вместо model.train(False))
+    
     print(f"Модель загружена (эпоха {checkpoint['epoch']})")
+    print(f"  Val Loss: {checkpoint.get('val_loss', 'N/A')}")
+    print(f"  Параметров: {sum(p.numel() for p in model.parameters()):,}")
+    
     return model, stats, config, checkpoint
 
 
