@@ -812,6 +812,7 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
         train_loss = 0.0
         optimizer.zero_grad(set_to_none=True)
         num_train_batches = 0
+        scaler_unscaled = False  # Флаг для отслеживания вызова unscale_()
         
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             num_train_batches += 1
