@@ -70,6 +70,8 @@ PRESSURE_LEVELS_MERRA2 = [
     70, 50, 40, 30, 20, 10, 7, 5, 4, 3, 2, 1, 0.7, 0.5, 0.4, 0.3, 0.1
 ]
 
+BATCH_SIZE = 64
+MAX_EPOCHS = 100
 
 # Extended pressure levels to 0.1 hPa for both sources
 # Input levels: troposphere (1000-100 hPa)
@@ -935,8 +937,7 @@ def main():
         raise ValueError(f"Unknown DATA_SOURCE: {DATA_SOURCE}. Must be 'ERA5' or 'MERRA2'")
 
     OUTPUT_DIR = f'./training_{DATA_SOURCE.lower()}_extended'
-    BATCH_SIZE = 64
-    MAX_EPOCHS = 100
+    
 
 
     # Calculate dimensions
