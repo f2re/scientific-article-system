@@ -132,66 +132,51 @@ class VerticalSelfAttention(nn.Module):
         # Squeeze обратно: [batch, n_levels]
         return output.squeeze(-1)
 
-
 class CrossAttentionBlock(nn.Module):
     """
     Cross-Attention между термодинамическими (T, RH, Z) и динамическими (U, V) переменными.
-    
-    Моделирует физическую связь через уравнение теплового ветра:
-        ∂u/∂ln(p) = -(R/f) * ∂T/∂y
-        
-    где f - параметр Кориолиса, R - газовая постоянная.
-    
-    Это означает, что вертикальный сдвиг ветра связан с горизонтальным
-    градиентом температуры. Cross-attention позволяет модели явно учиться
-    этой взаимосвязи.
+    Моделирует физическую связь через уравнение теплового ветра.
     """
     def __init__(self, thermo_dim: int, wind_dim: int, hidden_dim: int = 256):
         super(CrossAttentionBlock, self).__init__()
         
         # Проекции для query, key, value
-        self.query_proj = nn.Linear(wind_dim, hidden_dim)  # ветер как query
-        self.key_proj = nn.Linear(thermo_dim, hidden_dim)   # температура как key
-        self.value_proj = nn.Linear(thermo_dim, hidden_dim) # температура как value
+        self.query_proj = nn.Linear(wind_dim, hidden_dim)
+        self.key_proj = nn.Linear(thermo_dim, hidden_dim)
+        self.value_proj = nn.Linear(thermo_dim, hidden_dim)
         
-        self.scale = hidden_dim ** -0.5
+        # ИСПРАВЛЕНИЕ: регистрируем scale как buffer (автоматически на GPU)
+        self.register_buffer('scale', torch.tensor(hidden_dim ** -0.5))
+        
         self.dropout = nn.Dropout(0.1)
-        
-        # Выходная проекция
         self.output_proj = nn.Linear(hidden_dim, wind_dim)
         self.layer_norm = nn.LayerNorm(wind_dim)
-        
+
     def forward(self, thermo_features: torch.Tensor, wind_features: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            thermo_features: [batch, thermo_dim] - признаки из термодинамической ветви
-            wind_features: [batch, wind_dim] - признаки из ветровой ветви
-            
+            thermo_features: [batch, thermo_dim]
+            wind_features: [batch, wind_dim]
         Returns:
-            enhanced_wind: [batch, wind_dim] - обогащенные ветровые признаки
+            enhanced_wind: [batch, wind_dim]
         """
-        # Вычисляем query, key, value
-        Q = self.query_proj(wind_features)      # [batch, hidden_dim]
-        K = self.key_proj(thermo_features)      # [batch, hidden_dim]
-        V = self.value_proj(thermo_features)    # [batch, hidden_dim]
+        # Все операции теперь автоматически на правильном device
+        Q = self.query_proj(wind_features)  # [batch, hidden_dim]
+        K = self.key_proj(thermo_features)   # [batch, hidden_dim]
+        V = self.value_proj(thermo_features) # [batch, hidden_dim]
+
+        # ОПТИМИЗАЦИЯ: используем einsum для эффективности
+        # Вместо unsqueeze + bmm
+        attn_scores = torch.einsum('bd,bd->b', Q, K).unsqueeze(1).unsqueeze(2)  # [batch, 1, 1]
+        attn_scores = attn_scores * self.scale
         
-        # Attention scores: Q @ K^T / sqrt(d)
-        # Добавляем размерность для batch matrix multiplication
-        Q = Q.unsqueeze(1)  # [batch, 1, hidden_dim]
-        K = K.unsqueeze(2)  # [batch, hidden_dim, 1]
-        
-        attn_scores = torch.bmm(Q, K) * self.scale  # [batch, 1, 1]
         attn_weights = F.softmax(attn_scores, dim=-1)
         attn_weights = self.dropout(attn_weights)
+
+        # ОПТИМИЗАЦИЯ: прямое умножение вместо bmm
+        attended = (attn_weights.squeeze() * V.T).T  # [batch, hidden_dim]
         
-        # Apply attention to values
-        V = V.unsqueeze(1)  # [batch, 1, hidden_dim]
-        attended = torch.bmm(attn_weights, V).squeeze(1)  # [batch, hidden_dim]
-        
-        # Выходная проекция
         output = self.output_proj(attended)
-        
-        # Остаточная связь + layer normalization
         enhanced_wind = self.layer_norm(output + wind_features)
         
         return enhanced_wind
@@ -520,17 +505,7 @@ class MultiHeadAtmosphericResNet(nn.Module):
 class PhysicsInformedLoss(nn.Module):
     """
     Комбинированная функция потерь с физическими ограничениями.
-    
-    Состоит из:
-    1. MSE Loss - основная метрика точности предсказаний
-    2. Thermal Wind Constraint - физическое ограничение на связь T и U/V
-    3. Weighted Loss - повышенный вес для ветровых компонент
-    
-    Уравнение теплового ветра (упрощенная версия):
-        ∂u/∂ln(p) ~ ∂T/∂ln(p)
-        
-    Мы проверяем, что вертикальные градиенты ветра коррелируют
-    с вертикальными градиентами температуры.
+    ОПТИМИЗИРОВАНО для GPU: все операции векторизованы и на device.
     """
     def __init__(
         self,
@@ -539,14 +514,16 @@ class PhysicsInformedLoss(nn.Module):
         wind_component_weight: float = 2.0
     ):
         super(PhysicsInformedLoss, self).__init__()
-        
         self.n_levels = n_output_levels
-        self.tw_weight = thermal_wind_weight
-        self.wind_weight = wind_component_weight
         
-        # Базовая MSE loss
-        self.mse = nn.MSELoss()
-    
+        # ИСПРАВЛЕНИЕ: регистрируем веса как buffers
+        self.register_buffer('tw_weight', torch.tensor(thermal_wind_weight))
+        self.register_buffer('wind_weight', torch.tensor(wind_component_weight))
+        self.register_buffer('epsilon', torch.tensor(1e-8))
+        
+        # MSE reduction='none' для гибкости
+        self.mse = nn.MSELoss(reduction='mean')
+
     def thermal_wind_constraint(
         self,
         T_pred: torch.Tensor,
@@ -554,97 +531,74 @@ class PhysicsInformedLoss(nn.Module):
         V_pred: torch.Tensor
     ) -> torch.Tensor:
         """
-        Вычисление ограничения теплового ветра.
-        
-        Проверяем корреляцию между вертикальными градиентами
-        температуры и ветра.
-        
-        Args:
-            T_pred: [batch, n_levels] - предсказанная температура
-            U_pred: [batch, n_levels] - предсказанная U-компонента
-            V_pred: [batch, n_levels] - предсказанная V-компонента
-        
-        Returns:
-            loss: скаляр - потеря от нарушения теплового ветра
+        ОПТИМИЗИРОВАНО: все операции на GPU, векторизованы.
         """
         if self.n_levels < 2:
-            return torch.tensor(0.0, device=T_pred.device)
+            # ИСПРАВЛЕНИЕ: создаем тензор на правильном device
+            return torch.zeros(1, device=T_pred.device, dtype=T_pred.dtype)
+
+        # Вертикальные градиенты (GPU-эффективно)
+        dT = T_pred[:, 1:] - T_pred[:, :-1]  # [batch, n_levels-1]
+        dU = U_pred[:, 1:] - U_pred[:, :-1]
+        dV = V_pred[:, 1:] - V_pred[:, :-1]
+
+        # ОПТИМИЗАЦИЯ: векторизованное вычисление косинусного сходства
+        # Избегаем F.cosine_similarity для каждой пары отдельно
         
-        # Вычисляем вертикальные градиенты (разность между уровнями)
-        dT = torch.diff(T_pred, dim=1)   # [batch, n_levels-1]
-        dU = torch.diff(U_pred, dim=1)   # [batch, n_levels-1]
-        dV = torch.diff(V_pred, dim=1)   # [batch, n_levels-1]
+        # Нормализация векторов
+        dT_norm = dT / (dT.norm(dim=1, keepdim=True) + self.epsilon)
+        dU_norm = dU / (dU.norm(dim=1, keepdim=True) + self.epsilon)
+        dV_norm = dV / (dV.norm(dim=1, keepdim=True) + self.epsilon)
         
-        # Модуль градиента ветра
-        dWind = torch.sqrt(dU**2 + dV**2 + 1e-8)
-        
-        # Физическое ограничение: косинусное сходство между dT и dWind
-        # Если они коррелируют, cos_sim близок к 1 или -1
-        cos_sim_U = F.cosine_similarity(dT, dU, dim=1).abs().mean()
-        cos_sim_V = F.cosine_similarity(dT, dV, dim=1).abs().mean()
-        
-        # Потеря: 1 - |correlation| (минимум при полной корреляции)
-        tw_loss = (1.0 - cos_sim_U) + (1.0 - cos_sim_V)
+        # Косинусное сходство через скалярное произведение
+        cos_sim_U = (dT_norm * dU_norm).sum(dim=1).abs().mean()
+        cos_sim_V = (dT_norm * dV_norm).sum(dim=1).abs().mean()
+
+        # Потеря
+        tw_loss = (2.0 - cos_sim_U - cos_sim_V)  # 0 при идеальной корреляции
         
         return tw_loss
-    
+
     def forward(
         self,
         predictions: torch.Tensor,
         targets: torch.Tensor
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
         """
-        Вычисление комбинированной функции потерь.
-        
-        Args:
-            predictions: [batch, output_dim] - предсказания модели
-            targets: [batch, output_dim] - истинные значения
-        
-        Returns:
-            total_loss: скаляр - общая потеря
-            loss_dict: словарь с компонентами потерь для логирования
+        Все операции на GPU, минимум синхронизаций CPU-GPU.
         """
-        # Извлекаем отдельные переменные из predictions и targets
-        # Порядок: T, RH, Z, U, V
+        # Извлечение переменных через slicing (GPU-эффективно)
         T_pred = predictions[:, :self.n_levels]
         RH_pred = predictions[:, self.n_levels:2*self.n_levels]
         Z_pred = predictions[:, 2*self.n_levels:3*self.n_levels]
         U_pred = predictions[:, 3*self.n_levels:4*self.n_levels]
         V_pred = predictions[:, 4*self.n_levels:]
-        
+
         T_true = targets[:, :self.n_levels]
         RH_true = targets[:, self.n_levels:2*self.n_levels]
         Z_true = targets[:, 2*self.n_levels:3*self.n_levels]
         U_true = targets[:, 3*self.n_levels:4*self.n_levels]
         V_true = targets[:, 4*self.n_levels:]
-        
-        # ====================================================================
-        # 1. БАЗОВАЯ MSE LOSS для каждой переменной
-        # ====================================================================
-        
+
+        # MSE для каждой переменной (всё на GPU)
         mse_T = self.mse(T_pred, T_true)
         mse_RH = self.mse(RH_pred, RH_true)
         mse_Z = self.mse(Z_pred, Z_true)
         mse_U = self.mse(U_pred, U_true)
         mse_V = self.mse(V_pred, V_true)
-        
-        # Взвешенная MSE: увеличенный вес для ветровых компонент
+
+        # Взвешенная сумма (используем buffer weights)
         mse_total = (mse_T + mse_RH + mse_Z + 
-                     self.wind_weight * (mse_U + mse_V)) / (3 + 2 * self.wind_weight)
-        
-        # ====================================================================
-        # 2. PHYSICAL CONSTRAINT: Thermal Wind
-        # ====================================================================
-        
+                     self.wind_weight * (mse_U + mse_V)) / (3.0 + 2.0 * self.wind_weight)
+
+        # Physical constraint
         tw_loss = self.thermal_wind_constraint(T_pred, U_pred, V_pred)
-        
-        # ====================================================================
-        # 3. ОБЩАЯ ПОТЕРЯ
-        # ====================================================================
-        
+
+        # Общая потеря
         total_loss = mse_total + self.tw_weight * tw_loss
-        
-        # Словарь для логирования отдельных компонент
+
+        # ВАЖНО: .item() вызывает CPU-GPU синхронизацию!
+        # Делаем это один раз в конце, не в цикле
         loss_dict = {
             'total': total_loss.item(),
             'mse': mse_total.item(),
@@ -655,14 +609,14 @@ class PhysicsInformedLoss(nn.Module):
             'mse_V': mse_V.item(),
             'thermal_wind': tw_loss.item()
         }
-        
+
         return total_loss, loss_dict
+
 
 
 # ============================================================================
 # ФАБРИЧНАЯ ФУНКЦИЯ ДЛЯ СОЗДАНИЯ МОДЕЛИ
 # ============================================================================
-
 def create_model(
     input_dim: int = 120,
     output_dim: int = 65,
@@ -672,40 +626,22 @@ def create_model(
     random_seed: int = 42
 ) -> MultiHeadAtmosphericResNet:
     """
-    Создание улучшенной модели с фиксированной инициализацией.
-    
-    СОВМЕСТИМОСТЬ: Эта функция заменяет create_model() из базовой версии
-    и полностью совместима с текущим пайплайном обучения.
-    
-    Args:
-        input_dim: Размерность входа (n_input_levels * 5)
-        output_dim: Размерность выхода (n_output_levels * 5)
-        n_input_levels: Количество входных уровней давления
-        n_output_levels: Количество выходных уровней давления
-        device: 'cpu' или 'cuda'
-        random_seed: Зерно для воспроизводимости
-    
-    Returns:
-        model: Инициализированная модель MultiHeadAtmosphericResNet
-    
-    Example:
-        >>> # Базовая конфигурация (24 входных, 13 выходных уровней)
-        >>> model = create_model(input_dim=120, output_dim=65, 
-        ...                      n_input_levels=24, n_output_levels=13)
-        
-        >>> # Расширенная конфигурация для MERRA-2 до 0.1 гПа
-        >>> model = create_model(input_dim=145, output_dim=85,
-        ...                      n_input_levels=29, n_output_levels=17)
+    Создание модели с правильной инициализацией на GPU.
     """
-    # Фиксируем random seed для воспроизводимости
+    # Фиксируем random seed
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     
-    if torch.cuda.is_available() and device == 'cuda':
-        torch.cuda.manual_seed(random_seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+    # ИСПРАВЛЕНИЕ: проверяем device правильно
+    if isinstance(device, str):
+        device = torch.device(device)
     
+    if device.type == 'cuda':
+        torch.cuda.manual_seed(random_seed)
+        torch.cuda.manual_seed_all(random_seed)  # Для multi-GPU
+        # ВАЖНО: для обучения используем benchmark=True (уже в main)
+        # torch.backends.cudnn.deterministic = True только для отладки
+
     # Создаем модель
     model = MultiHeadAtmosphericResNet(
         input_dim=input_dim,
@@ -714,10 +650,10 @@ def create_model(
         n_output_levels=n_output_levels,
         dropout_rate=0.2
     )
-    
-    model.to(device)
-    
-    # Вывод информации
+
+    # КРИТИЧНО: переносим модель на GPU ДО инициализации весов
+    model = model.to(device)
+
     print("=" * 80)
     print("УЛУЧШЕННАЯ MULTI-HEAD АРХИТЕКТУРА")
     print("=" * 80)
@@ -725,14 +661,22 @@ def create_model(
     print(f"Входная размерность: {input_dim} ({n_input_levels} уровней × 5 переменных)")
     print(f"Выходная размерность: {output_dim} ({n_output_levels} уровней × 5 переменных)")
     print(f"Число параметров: {model.count_parameters():,}")
+    
+    if device.type == 'cuda':
+        print(f"\nGPU память:")
+        print(f"  Выделено под модель: {torch.cuda.memory_allocated(device.index or 0) / 1e9:.3f} GB")
+        print(f"  Зарезервировано: {torch.cuda.memory_reserved(device.index or 0) / 1e9:.3f} GB")
+    
     print(f"\nКлючевые улучшения:")
     print(f"  ✓ Раздельные энкодеры для термодинамики (T, RH, Z) и динамики (U, V)")
     print(f"  ✓ Cross-Attention для моделирования теплового ветра")
     print(f"  ✓ Vertical Self-Attention для ветровых компонент")
     print(f"  ✓ Отдельные выходные головы для каждой переменной")
+    print(f"  ✓ Все операции оптимизированы для GPU")
     print("=" * 80)
-    
+
     return model
+
 
 
 # ============================================================================
