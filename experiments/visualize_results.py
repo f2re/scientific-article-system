@@ -302,8 +302,8 @@ def create_rmse_by_level(predictions, targets, output_levels, output_dir):
 
 
 def create_vertical_profiles(predictions, targets, inputs, input_levels, output_levels, metadata, output_dir, n_samples=10):
-    """Создание вертикальных профилей атмосферы от 50 гПа до 0.1 гПа"""
-    print(f"Создание вертикальных профилей ({n_samples} примеров) от 50 гПа до 0.1 гПа...")
+    """Создание вертикальных профилей атмосферы от 100 гПа до 0.1 гПа"""
+    print(f"Создание вертикальных профилей ({n_samples} примеров) от 100 гПа до 0.1 гПа...")
 
     n_levels_out = len(output_levels)
     n_levels_in = len(input_levels)
@@ -312,9 +312,9 @@ def create_vertical_profiles(predictions, targets, inputs, input_levels, output_
     var_labels = ['Температура', 'Отн. влажность', 'Геопотенциал', 'Зональный ветер', 'Меридиональный ветер']
     var_units = ['K', '%', 'м²/с²', 'м/с', 'м/с']
 
-    # Определить диапазон для визуализации: от 300 гПа до 0.1 гПа (показать стык на 100 гПа)
-    # Найти индексы входных уровней >= 300 гПа
-    input_levels_filtered_idx = [i for i, lev in enumerate(input_levels) if lev <= 300]
+    # Определить диапазон для визуализации: от 100 гПа до 0.1 гПа (показать стык на 100 гПа)
+    # Найти индексы входных уровней <= 100 гПа (включая 100 гПа)
+    input_levels_filtered_idx = [i for i, lev in enumerate(input_levels) if lev <= 100]
     input_levels_filtered = [input_levels[i] for i in input_levels_filtered_idx]
 
     # Все выходные уровни уже в нужном диапазоне
@@ -330,7 +330,7 @@ def create_vertical_profiles(predictions, targets, inputs, input_levels, output_
 
         # Заголовок с метаданными
         time_str = meta['time'][:19] if len(meta['time']) > 19 else meta['time']  # Обрезать доли секунд
-        title = (f'Вертикальный профиль атмосферы (300-0.1 гПа)\n'
+        title = (f'Вертикальный профиль атмосферы (100-0.1 гПа)\n'
                 f'Время: {time_str} UTC | '
                 f'Координаты: {meta["lat"]:.2f}°N, {meta["lon"]:.2f}°E')
         fig.suptitle(title, fontsize=16, fontweight='bold')
@@ -361,35 +361,37 @@ def create_vertical_profiles(predictions, targets, inputs, input_levels, output_
             ax.set_title(f'{var_name}', fontsize=15, fontweight='bold')
             ax.set_yscale('log')  # Логарифмическая шкала для давления
 
-            # 0.1 гПа вверху (верхние слои), 300 гПа внизу (нижние слои)
-            ax.set_ylim([0.08, 300])  # Меньшее давление = выше в атмосфере
+            # 0.1 гПа вверху (верхние слои), 100 гПа внизу (нижние слои)
+            ax.set_ylim([0.08, 120])  # Меньшее давление = выше в атмосфере
             ax.invert_yaxis()  # Инверсия чтобы малые значения были вверху
 
             ax.grid(True, alpha=0.3, which='both')
             ax.legend(fontsize=10, loc='best')
 
-            # Настроить метки оси Y
-            yticks = [300, 200, 100, 70, 50, 30, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1]
+            # Настроить метки оси Y (от 100 гПа до 0.1 гПа)
+            yticks = [100, 70, 50, 30, 20, 10, 5, 3, 2, 1, 0.7, 0.5, 0.3, 0.1]
             ax.set_yticks(yticks)
             ax.set_yticklabels([str(y) for y in yticks])
 
             # Добавить разделительную линию на 100 гПа (граница входных/выходных)
-            ax.axhline(y=100, color='gray', linestyle='--', linewidth=2, alpha=0.6)
+            # Только если 100 гПа входит в диапазон визуализации
+            if 100 in input_levels_filtered or min(output_levels) <= 100 <= max(output_levels):
+                ax.axhline(y=100, color='gray', linestyle='--', linewidth=2, alpha=0.6)
 
             # Добавить метки слоев атмосферы
             if var_idx == 0:  # Только на первом графике
-                ax.text(0.02, 0.98, 'Прогноз\n(> 100 гПа)',
+                ax.text(0.02, 0.95, 'Прогноз ML\n(< 100 гПа)',
                        transform=ax.transAxes, fontsize=9,
                        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5))
-                ax.text(0.02, 0.02, 'Вход\n(<= 100 гПа)',
+                ax.text(0.02, 0.05, 'Входные данные\n(100 гПа)',
                        transform=ax.transAxes, fontsize=9,
                        verticalalignment='bottom', bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.5))
 
         plt.tight_layout()
-        plt.savefig(f'{output_dir}/vertical_profile_{sample_idx}_300-0.1hPa_ru.png', dpi=200, bbox_inches='tight')
+        plt.savefig(f'{output_dir}/vertical_profile_{sample_idx}_100-0.1hPa_ru.png', dpi=200, bbox_inches='tight')
         plt.close()
 
-    print(f"  ✓ Сохранено: {n_samples} вертикальных профилей (300-0.1 гПа)")
+    print(f"  ✓ Сохранено: {n_samples} вертикальных профилей (100-0.1 гПа)")
 
 
 def create_error_heatmap(predictions, targets, output_levels, output_dir):
@@ -463,7 +465,18 @@ def main(model_dir='./training_era5_extended', data_dir=None):
 
     # Автоопределение директории данных
     if data_dir is None:
-        data_dir = f'./data/{DATA_SOURCE.lower()}'
+        # Попробовать несколько возможных расположений
+        possible_paths = [
+            f'./data/{DATA_SOURCE.lower()}',
+            f'./experiments/data/{DATA_SOURCE.lower()}',
+            f'../data/{DATA_SOURCE.lower()}'
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                data_dir = path
+                break
+        else:
+            data_dir = f'./data/{DATA_SOURCE.lower()}'  # По умолчанию
 
     print(f"\nИсточник данных: {DATA_SOURCE}")
     print(f"Директория данных: {data_dir}")
@@ -494,20 +507,215 @@ def main(model_dir='./training_era5_extended', data_dir=None):
     # Создать директорию для визуализаций
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    # Создать графики
+    # Создать базовые графики
     create_scatter_plots(predictions, targets, OUTPUT_LEVELS, output_dir)
     create_rmse_by_level(predictions, targets, OUTPUT_LEVELS, output_dir)
     create_vertical_profiles(predictions, targets, inputs, INPUT_LEVELS, OUTPUT_LEVELS, metadata, output_dir, n_samples=10)
     create_error_heatmap(predictions, targets, OUTPUT_LEVELS, output_dir)
 
+    # Вычислить детальные метрики для научного анализа
+    print("\n" + "="*70)
+    print("РАСШИРЕННЫЙ НАУЧНЫЙ АНАЛИЗ ОШИБОК")
+    print("="*70)
+
+    metrics = compute_detailed_metrics(predictions, targets, len(OUTPUT_LEVELS))
+
+    # Вывести сводку метрик
+    print("\nСводка метрик на тестовой выборке:")
+    print("-" * 70)
+    for var_name in ['T', 'R', 'Z', 'U', 'V']:
+        m = metrics[var_name]
+        print(f"{var_name:5s} | RMSE: {m['rmse_global']:8.4f} | MAE: {m['mae_global']:8.4f} | "
+              f"Bias: {m['bias_global']:8.4f} | R²: {m['r2_global']:7.4f} | "
+              f"r: {m['corr_global']:7.4f}")
+    print("-" * 70)
+
+    # Создать научные визуализации
+    create_scientific_error_profiles(metrics, OUTPUT_LEVELS, output_dir)
+    create_metrics_table(metrics, output_dir)
+
     print("\n" + "="*70)
     print(f"✓ Все визуализации сохранены в: {output_dir}/")
     print(f"  - Scatter plots (temperature, RH, geopotential, winds)")
     print(f"  - RMSE по уровням давления (до {OUTPUT_LEVELS[-1]} гПа)")
-    print(f"  - Вертикальные профили (10 примеров, диапазон 50-0.1 гПа)")
+    print(f"  - Вертикальные профили (10 примеров, диапазон 100-0.1 гПа)")
     print(f"  - Тепловая карта ошибок")
+    print(f"  - Научные профили ошибок RMSE/MAE/Bias по высотам ⭐")
+    print(f"  - Сводная таблица метрик (PNG + CSV) ⭐")
     print("="*70)
 
 
 if __name__ == '__main__':
     main(model_dir='./training_merra2_extended')
+
+# ============================================================================
+# РАСШИРЕННЫЙ НАУЧНЫЙ АНАЛИЗ ОШИБОК (добавлено)
+# ============================================================================
+
+def compute_detailed_metrics(predictions, targets, n_levels):
+    """Расчёт детальных метрик ошибок"""
+    from scipy import stats as scipy_stats
+    
+    var_names = ['T', 'R', 'Z', 'U', 'V']
+    metrics = {}
+    
+    for var_idx, var_name in enumerate(var_names):
+        var_pred = predictions[:, var_idx*n_levels:(var_idx+1)*n_levels]
+        var_target = targets[:, var_idx*n_levels:(var_idx+1)*n_levels]
+        errors = var_pred - var_target
+        
+        # Глобальные метрики
+        rmse_global = np.sqrt(np.mean(errors**2))
+        mae_global = np.mean(np.abs(errors))
+        bias_global = np.mean(errors)
+        
+        # R² и корреляция
+        ss_res = np.sum(errors**2)
+        ss_tot = np.sum((var_target - np.mean(var_target))**2)
+        r2_global = 1 - (ss_res / (ss_tot + 1e-8))
+        corr_global = np.corrcoef(var_target.flatten(), var_pred.flatten())[0, 1]
+        
+        # По уровням
+        rmse_by_level = np.sqrt(np.mean((var_pred - var_target)**2, axis=0))
+        mae_by_level = np.mean(np.abs(var_pred - var_target), axis=0)
+        bias_by_level = np.mean(var_pred - var_target, axis=0)
+        std_by_level = np.std(var_pred - var_target, axis=0)
+        
+        metrics[var_name] = {
+            'rmse_global': rmse_global,
+            'mae_global': mae_global,
+            'bias_global': bias_global,
+            'r2_global': r2_global,
+            'corr_global': corr_global,
+            'rmse_by_level': rmse_by_level,
+            'mae_by_level': mae_by_level,
+            'bias_by_level': bias_by_level,
+            'std_by_level': std_by_level,
+            'errors': errors
+        }
+    
+    return metrics
+
+
+def create_scientific_error_profiles(metrics, output_levels, output_dir):
+    """Научные вертикальные профили ошибок"""
+    from matplotlib.gridspec import GridSpec
+    
+    print("Создание научных профилей ошибок...")
+    
+    var_names = ['T', 'R', 'Z', 'U', 'V']
+    var_labels = ['Температура', 'Отн. влажность', 'Геопотенциал', 'U-ветер', 'V-ветер']
+    var_units = ['K', '%', 'м²/с²', 'м/с', 'м/с']
+    
+    fig = plt.figure(figsize=(20, 12))
+    gs = GridSpec(3, 5, figure=fig, hspace=0.35, wspace=0.3)
+    
+    for var_idx, (var_name, var_label, var_unit) in enumerate(zip(var_names, var_labels, var_units)):
+        m = metrics[var_name]
+        
+        # RMSE
+        ax_rmse = fig.add_subplot(gs[0, var_idx])
+        ax_rmse.plot(m['rmse_by_level'], output_levels, 'o-', linewidth=2.5, markersize=8, color='darkred')
+        ax_rmse.set_xlabel(f'RMSE ({var_unit})', fontsize=11, fontweight='bold')
+        ax_rmse.set_ylabel('Давление (гПа)', fontsize=11, fontweight='bold')
+        ax_rmse.set_title(f'{var_label}\\nRMSE={m["rmse_global"]:.3f} {var_unit}', fontsize=12, fontweight='bold')
+        ax_rmse.set_yscale('log')
+        ax_rmse.set_ylim([0.08, 120])
+        ax_rmse.invert_yaxis()
+        ax_rmse.grid(True, alpha=0.3, which='both')
+        ax_rmse.axhline(y=100, color='gray', linestyle='--', linewidth=1.5, alpha=0.5)
+        
+        # MAE
+        ax_mae = fig.add_subplot(gs[1, var_idx])
+        ax_mae.plot(m['mae_by_level'], output_levels, 's-', linewidth=2.5, markersize=8, color='darkblue')
+        ax_mae.set_xlabel(f'MAE ({var_unit})', fontsize=11, fontweight='bold')
+        ax_mae.set_ylabel('Давление (гПа)', fontsize=11, fontweight='bold')
+        ax_mae.set_title(f'MAE={m["mae_global"]:.3f} {var_unit}', fontsize=12, fontweight='bold')
+        ax_mae.set_yscale('log')
+        ax_mae.set_ylim([0.08, 120])
+        ax_mae.invert_yaxis()
+        ax_mae.grid(True, alpha=0.3, which='both')
+        ax_mae.axhline(y=100, color='gray', linestyle='--', linewidth=1.5, alpha=0.5)
+        
+        # Bias ± Std
+        ax_bias = fig.add_subplot(gs[2, var_idx])
+        ax_bias.plot(m['bias_by_level'], output_levels, '^-', linewidth=2.5, markersize=8, color='darkgreen')
+        ax_bias.fill_betweenx(output_levels,
+                              m['bias_by_level'] - m['std_by_level'],
+                              m['bias_by_level'] + m['std_by_level'],
+                              alpha=0.2, color='green', label='±1σ')
+        ax_bias.axvline(x=0, color='black', linestyle='--', linewidth=1.5, alpha=0.7)
+        ax_bias.set_xlabel(f'Bias ({var_unit})', fontsize=11, fontweight='bold')
+        ax_bias.set_ylabel('Давление (гПа)', fontsize=11, fontweight='bold')
+        ax_bias.set_title(f'Bias={m["bias_global"]:.3f} {var_unit}', fontsize=12, fontweight='bold')
+        ax_bias.set_yscale('log')
+        ax_bias.set_ylim([0.08, 120])
+        ax_bias.invert_yaxis()
+        ax_bias.grid(True, alpha=0.3, which='both')
+        ax_bias.axhline(y=100, color='gray', linestyle='--', linewidth=1.5, alpha=0.5)
+        ax_bias.legend(fontsize=9, loc='best')
+    
+    fig.suptitle('Вертикальные профили ошибок (RMSE, MAE, Bias) по высотам 100-0.1 гПа',
+                 fontsize=16, fontweight='bold', y=0.995)
+    
+    plt.savefig(f'{output_dir}/scientific_error_profiles_ru.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ Сохранено: {output_dir}/scientific_error_profiles_ru.png")
+
+
+def create_metrics_table(metrics, output_dir):
+    """Сводная таблица метрик"""
+    import pandas as pd
+    
+    print("Создание сводной таблицы метрик...")
+    
+    var_names = ['T', 'R', 'Z', 'U', 'V']
+    var_labels = ['Температура (K)', 'Отн. влажность (%)', 'Геопотенциал (м²/с²)',
+                  'Зональный ветер (м/с)', 'Меридиональный ветер (м/с)']
+    
+    data = []
+    for var_name, var_label in zip(var_names, var_labels):
+        m = metrics[var_name]
+        data.append([
+            var_label,
+            f"{m['rmse_global']:.4f}",
+            f"{m['mae_global']:.4f}",
+            f"{m['bias_global']:.4f}",
+            f"{m['r2_global']:.4f}",
+            f"{m['corr_global']:.4f}"
+        ])
+    
+    columns = ['Переменная', 'RMSE', 'MAE', 'Bias', 'R²', 'Корреляция']
+    df = pd.DataFrame(data, columns=columns)
+    
+    fig, ax = plt.subplots(figsize=(14, 5))
+    ax.axis('tight')
+    ax.axis('off')
+    
+    table = ax.table(cellText=df.values, colLabels=df.columns,
+                    cellLoc='center', loc='center',
+                    colWidths=[0.28, 0.14, 0.14, 0.14, 0.14, 0.16])
+    
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1, 2.5)
+    
+    for i in range(len(columns)):
+        cell = table[(0, i)]
+        cell.set_facecolor('#4472C4')
+        cell.set_text_props(weight='bold', color='white', fontsize=12)
+    
+    for i in range(1, len(data) + 1):
+        for j in range(len(columns)):
+            cell = table[(i, j)]
+            cell.set_facecolor('#E7E6E6' if i % 2 == 0 else 'white')
+    
+    plt.title('Сводная таблица метрик качества модели на тестовой выборке',
+              fontsize=14, fontweight='bold', pad=20)
+    
+    plt.savefig(f'{output_dir}/metrics_summary_table_ru.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    df.to_csv(f'{output_dir}/metrics_summary.csv', index=False, encoding='utf-8-sig')
+    print(f"  ✓ Сохранено: {output_dir}/metrics_summary_table_ru.png")
+    print(f"  ✓ Сохранено: {output_dir}/metrics_summary.csv")
