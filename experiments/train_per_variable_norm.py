@@ -19,7 +19,8 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from datetime import datetime
 from pathlib import Path
 
-from model_architecture import AtmosphericProfileResNet
+# from model_architecture import AtmosphericProfileResNet
+from model_architecture import  create_model, PhysicsInformedLoss
 
 
 # ============================================================================
@@ -41,7 +42,7 @@ SEASONAL_MONTHS = {
 }
 
 # Выбор сезонов для загрузки (можно изменить)
-SEASONS_TO_DOWNLOAD = ['winter', 'summer']
+SEASONS_TO_DOWNLOAD = ['winter', 'spring', 'summer', 'autumn']
 
 # Временные срезы в сутках (часы UTC)
 TIME_SLICES = ['00:00', '12:00']
@@ -67,6 +68,15 @@ PRESSURE_LEVELS_MERRA2 = [
     650, 600, 550, 500, 450, 400, 350, 300, 250, 200, 150, 100,
     70, 50, 40, 30, 20, 10, 7, 5, 4, 3, 2, 1, 0.7, 0.5, 0.4, 0.3, 0.1
 ]
+
+
+# Extended pressure levels to 0.1 hPa for both sources
+# Input levels: troposphere (1000-100 hPa)
+INPUT_LEVELS = [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750,
+                700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200, 150, 100]  # 24 levels
+
+# Output levels: stratosphere and mesosphere (70-0.1 hPa)
+OUTPUT_LEVELS = [70, 50, 40, 30, 20, 10, 7, 5, 4, 3, 2, 1, 0.7, 0.5, 0.4, 0.3, 0.1]  # 17 levels
 
 # Метеорологические переменные ERA5
 VARIABLES_ERA5 = [
@@ -834,7 +844,11 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
 
     optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=1e-6)
-    criterion = nn.MSELoss()
+    criterion = PhysicsInformedLoss(
+        n_output_levels=len(OUTPUT_LEVELS),
+        thermal_wind_weight=0.1,
+        wind_component_weight=2.0
+    )
 
     history = {'train_loss': [], 'val_loss': [], 'learning_rate': []}
     best_val_loss = float('inf')
@@ -850,7 +864,7 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
             inputs, targets = inputs.to(device), targets.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            loss, loss_dict = criterion(outputs, targets)  # Вместо loss = criterion(outputs, targets)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -865,7 +879,7 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
             for inputs, targets in val_loader:
                 inputs, targets = inputs.to(device), targets.to(device)
                 outputs = model(inputs)
-                loss = criterion(outputs, targets)
+                loss, loss_dict = criterion(outputs, targets)  # Вместо loss = criterion(outputs, targets)
                 val_loss += loss.item()
 
         val_loss /= len(val_loader)
@@ -911,21 +925,13 @@ def main():
 
     OUTPUT_DIR = f'./training_{DATA_SOURCE.lower()}_extended'
     BATCH_SIZE = 32
-    MAX_EPOCHS = 100
+    MAX_EPOCHS = 5
 
-    # Extended pressure levels to 0.1 hPa for both sources
-    # Input levels: troposphere and lower stratosphere (1000-100 hPa) + some upper levels
-    INPUT_LEVELS = [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750,
-                    700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200, 150, 100,
-                    70, 50, 30, 20, 10]  # 29 levels
-
-    # Output levels: upper stratosphere and mesosphere (extended to 0.1 hPa)
-    OUTPUT_LEVELS = [7, 5, 4, 3, 2, 1, 0.7, 0.5, 0.4, 0.3, 0.1]  # 11 levels
 
     # Calculate dimensions
     n_variables = 5  # t, r, z, u, v
-    input_dim = len(INPUT_LEVELS) * n_variables  # 29 * 5 = 145
-    output_dim = len(OUTPUT_LEVELS) * n_variables  # 11 * 5 = 55
+    input_dim = len(INPUT_LEVELS) * n_variables  # 24 * 5 = 120
+    output_dim = len(OUTPUT_LEVELS) * n_variables  # 17 * 5 = 85
 
     torch.manual_seed(42)
     np.random.seed(42)
@@ -1015,13 +1021,12 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     # Updated model architecture for extended levels
-    model = AtmosphericProfileResNet(
+    model = create_model(
         input_dim=input_dim,
         output_dim=output_dim,
-        hidden_dims=hidden_dims,  # Use hidden_dims from config
-        dropout_rate=0.1,
-        use_batch_norm=True,
-        activation='gelu'
+        n_input_levels=len(INPUT_LEVELS),
+        n_output_levels=len(OUTPUT_LEVELS),
+        device=device
     )
     model = model.to(device)
 

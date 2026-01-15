@@ -10,7 +10,8 @@ import numpy as np
 import xarray as xr
 import torch
 
-from model_architecture import AtmosphericProfileResNet
+# from model_architecture import AtmosphericProfileResNet
+from model_architecture import MultiHeadAtmosphericResNet
 
 
 def load_model_and_stats(model_path, stats_path, config_path, device):
@@ -43,7 +44,7 @@ def load_model_and_stats(model_path, stats_path, config_path, device):
         print(f"  Hidden dimensions: {hidden_dims}")
 
     # Load model with correct dimensions
-    model = AtmosphericProfileResNet(
+    model = MultiHeadAtmosphericResNet(
         input_dim=input_dim,
         output_dim=output_dim,
         hidden_dims=hidden_dims,  # Use hidden_dims from config

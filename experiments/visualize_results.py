@@ -13,7 +13,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from model_architecture import AtmosphericProfileResNet
+# from model_architecture import AtmosphericProfileResNet
+from model_architecture import MultiHeadAtmosphericResNet
 
 # Настройка шрифтов для русского языка
 plt.rcParams['font.family'] = 'DejaVu Sans'
@@ -40,7 +41,7 @@ def load_model_and_stats(model_path, stats_path, config_path, device):
     if hidden_dims:
         print(f"  Hidden dimensions: {hidden_dims}")
 
-    model = AtmosphericProfileResNet(
+    model = MultiHeadAtmosphericResNet(
         input_dim=input_dim,
         output_dim=output_dim,
         hidden_dims=hidden_dims,  # Use hidden_dims from config
@@ -303,12 +304,12 @@ def create_vertical_profiles(predictions, targets, inputs, input_levels, output_
     var_labels = ['Температура', 'Отн. влажность', 'Геопотенциал', 'Зональный ветер', 'Меридиональный ветер']
     var_units = ['K', '%', 'м²/с²', 'м/с', 'м/с']
 
-    # Определить диапазон для визуализации: от 50 гПа до 0.1 гПа
-    # Найти индексы входных уровней >= 50 гПа
-    input_levels_filtered_idx = [i for i, lev in enumerate(input_levels) if lev <= 50]
+    # Определить диапазон для визуализации: от 300 гПа до 0.1 гПа (показать стык на 100 гПа)
+    # Найти индексы входных уровней >= 300 гПа
+    input_levels_filtered_idx = [i for i, lev in enumerate(input_levels) if lev <= 300]
     input_levels_filtered = [input_levels[i] for i in input_levels_filtered_idx]
 
-    # Все выходные уровни уже в нужном диапазоне (7 - 0.1 гПа)
+    # Все выходные уровни уже в нужном диапазоне
     display_levels = input_levels_filtered + output_levels
 
     # Выбрать случайные примеры
@@ -321,7 +322,7 @@ def create_vertical_profiles(predictions, targets, inputs, input_levels, output_
 
         # Заголовок с метаданными
         time_str = meta['time'][:19] if len(meta['time']) > 19 else meta['time']  # Обрезать доли секунд
-        title = (f'Вертикальный профиль атмосферы (50-0.1 гПа)\n'
+        title = (f'Вертикальный профиль атмосферы (300-0.1 гПа)\n'
                 f'Время: {time_str} UTC | '
                 f'Координаты: {meta["lat"]:.2f}°N, {meta["lon"]:.2f}°E')
         fig.suptitle(title, fontsize=16, fontweight='bold')
@@ -329,7 +330,7 @@ def create_vertical_profiles(predictions, targets, inputs, input_levels, output_
         for var_idx, (var_name, var_label, var_unit) in enumerate(zip(var_names, var_labels, var_units)):
             ax = axes[var_idx]
 
-            # Входные данные (только уровни <= 50 гПа)
+            # Входные данные
             input_var_full = inputs[sample_idx, var_idx*n_levels_in:(var_idx+1)*n_levels_in]
             input_var = [input_var_full[i] for i in input_levels_filtered_idx]
 
@@ -352,35 +353,35 @@ def create_vertical_profiles(predictions, targets, inputs, input_levels, output_
             ax.set_title(f'{var_name}', fontsize=15, fontweight='bold')
             ax.set_yscale('log')  # Логарифмическая шкала для давления
 
-            # 0.1 гПа вверху (верхние слои), 50 гПа внизу (нижние слои)
-            ax.set_ylim([0.08, 50])  # Меньшее давление = выше в атмосфере
+            # 0.1 гПа вверху (верхние слои), 300 гПа внизу (нижние слои)
+            ax.set_ylim([0.08, 300])  # Меньшее давление = выше в атмосфере
             ax.invert_yaxis()  # Инверсия чтобы малые значения были вверху
 
             ax.grid(True, alpha=0.3, which='both')
             ax.legend(fontsize=10, loc='best')
 
-            # Настроить метки оси Y (снизу вверх: от 50 к 0.1 гПа)
-            yticks = [50, 30, 20, 10, 7, 5, 3, 2, 1, 0.7, 0.5, 0.3, 0.1]
+            # Настроить метки оси Y
+            yticks = [300, 200, 100, 70, 50, 30, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1]
             ax.set_yticks(yticks)
             ax.set_yticklabels([str(y) for y in yticks])
 
-            # Добавить разделительную линию на 10 гПа (граница входных/выходных)
-            ax.axhline(y=10, color='gray', linestyle='--', linewidth=2, alpha=0.6)
+            # Добавить разделительную линию на 100 гПа (граница входных/выходных)
+            ax.axhline(y=100, color='gray', linestyle='--', linewidth=2, alpha=0.6)
 
             # Добавить метки слоев атмосферы
             if var_idx == 0:  # Только на первом графике
-                ax.text(0.02, 0.98, 'Верхние слои\n(мезосфера)',
+                ax.text(0.02, 0.98, 'Прогноз\n(> 100 гПа)',
                        transform=ax.transAxes, fontsize=9,
                        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5))
-                ax.text(0.02, 0.02, 'Нижние слои\n(стратосфера)',
+                ax.text(0.02, 0.02, 'Вход\n(<= 100 гПа)',
                        transform=ax.transAxes, fontsize=9,
                        verticalalignment='bottom', bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.5))
 
         plt.tight_layout()
-        plt.savefig(f'{output_dir}/vertical_profile_{sample_idx}_50-0.1hPa_ru.png', dpi=200, bbox_inches='tight')
+        plt.savefig(f'{output_dir}/vertical_profile_{sample_idx}_300-0.1hPa_ru.png', dpi=200, bbox_inches='tight')
         plt.close()
 
-    print(f"  ✓ Сохранено: {n_samples} вертикальных профилей (50-0.1 гПа)")
+    print(f"  ✓ Сохранено: {n_samples} вертикальных профилей (300-0.1 гПа)")
 
 
 def create_error_heatmap(predictions, targets, output_levels, output_dir):
