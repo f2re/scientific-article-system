@@ -681,7 +681,7 @@ class AtmosphericDatasetPerVarNorm(Dataset):
                             # ОПТИМИЗАЦИЯ #3: Прямая случайная выборка
                             lat_indices, lon_indices = np.where(valid_mask)
                             n_valid = len(lat_indices)
-                            n_samples = min(2000, n_valid)  # Лимит на файл
+                            n_samples = min(7000, n_valid)  # Лимит на файл
                             
                             selected = rng.choice(n_valid, n_samples, replace=False)
                             lat_sel = lat_indices[selected]
