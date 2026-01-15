@@ -862,8 +862,8 @@ def main():
         raise ValueError(f"Unknown DATA_SOURCE: {DATA_SOURCE}. Must be 'ERA5' or 'MERRA2'")
 
     OUTPUT_DIR = f'./training_{DATA_SOURCE.lower()}_extended'
-    BATCH_SIZE = 32
-    MAX_EPOCHS = 5
+    BATCH_SIZE = 64
+    MAX_EPOCHS = 200
 
 
     # Calculate dimensions
