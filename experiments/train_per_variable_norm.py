@@ -778,115 +778,113 @@ class AtmosphericDatasetPerVarNorm(Dataset):
             torch.from_numpy(profile['input_norm']).float(),
             torch.from_numpy(profile['output_norm']).float()
         )
-
 def train_model(model, train_loader, val_loader, device, max_epochs, output_dir):
     """
     ОПТИМИЗИРОВАННАЯ функция обучения с:
     - Mixed Precision (FP16) для ускорения на GPU
     - Gradient accumulation для больших эффективных batch sizes
-    - Асинхронная передача данных
+    - Асинхронная передачa данных
+    - Прозрачная поддержка DataParallel/DistributedDataParallel (модель уже должна быть обёрнута снаружи)
     """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    
+
     optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=1e-6)
-    
     criterion = PhysicsInformedLoss(
         n_output_levels=len(OUTPUT_LEVELS),
         thermal_wind_weight=0.1,
         wind_component_weight=2.0
     )
-    
-    # ====================================================================
-    # MIXED PRECISION: 2-3x speedup на GPU с Tensor Cores
-    # ====================================================================
-    use_amp = device.type == 'cuda'
+
+    # Mixed precision
+    use_amp = (device.type == 'cuda')
     scaler = GradScaler(enabled=use_amp)
-    
-    # Gradient accumulation для эффективного увеличения batch size
-    accumulation_steps = 2  # Эффективный batch = BATCH_SIZE * accumulation_steps
-    
+
+    accumulation_steps = 2  # эффективный batch = BATCH_SIZE * accumulation_steps
+
     history = {'train_loss': [], 'val_loss': [], 'learning_rate': []}
     best_val_loss = float('inf')
     best_epoch = 0
-    
+
     print(f"\nНачало обучения...")
     print(f"Mixed Precision: {'Enabled' if use_amp else 'Disabled'}")
     print(f"Gradient Accumulation: {accumulation_steps} steps")
     print(f"Эффективный batch size: {BATCH_SIZE * accumulation_steps}\n")
-    
+
     for epoch in range(1, max_epochs + 1):
         model.train()
         train_loss = 0.0
-        optimizer.zero_grad()
-        
+        optimizer.zero_grad(set_to_none=True)
+
+        num_train_batches = 0
+
         for batch_idx, (inputs, targets) in enumerate(train_loader):
-            # ============================================================
-            # ASYNC GPU TRANSFER: non_blocking=True для параллельной передачи
-            # ============================================================
+            num_train_batches += 1
+
+            # async transfer
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
-            
-            # ============================================================
-            # MIXED PRECISION: автоматическое использование FP16
-            # ============================================================
+
             with autocast(enabled=use_amp):
                 outputs = model(inputs)
                 loss, loss_dict = criterion(outputs, targets)
-                loss = loss / accumulation_steps  # Normalize for accumulation
-            
-            # Backward pass с масштабированием градиентов (FP16)
+                loss = loss / accumulation_steps  # нормировка для аккумулирования
+
             scaler.scale(loss).backward()
-            
-            # Accumulate gradients
+
             if (batch_idx + 1) % accumulation_steps == 0:
-                # Gradient clipping
+                # gradient clipping
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                
-                # Optimizer step
+
                 scaler.step(optimizer)
                 scaler.update()
-                optimizer.zero_grad()
-            
+                optimizer.zero_grad(set_to_none=True)
+
             train_loss += loss.item() * accumulation_steps
-        
-        train_loss /= len(train_loader)
-        
-        # ============================================================
-        # VALIDATION: with torch.no_grad() for memory efficiency
-        # ============================================================
+
+        if num_train_batches > 0:
+            train_loss /= num_train_batches
+        else:
+            train_loss = float('nan')
+
+        # === ВАЛИДАЦИЯ ===
         model.eval()
         val_loss = 0.0
-        
+        num_val_batches = 0
+
         with torch.no_grad():
             for inputs, targets in val_loader:
+                num_val_batches += 1
                 inputs = inputs.to(device, non_blocking=True)
                 targets = targets.to(device, non_blocking=True)
-                
+
                 with autocast(enabled=use_amp):
                     outputs = model(inputs)
                     loss, loss_dict = criterion(outputs, targets)
-                
-                val_loss += loss.item()
-        
-        val_loss /= len(val_loader)
+                    val_loss += loss.item()
+
+        if num_val_batches > 0:
+            val_loss /= num_val_batches
+        else:
+            val_loss = float('nan')
+
         scheduler.step()
-        
-        # Logging
+
         history['train_loss'].append(float(train_loss))
         history['val_loss'].append(float(val_loss))
         history['learning_rate'].append(float(optimizer.param_groups[0]['lr']))
-        
-        # GPU memory stats
+
         if device.type == 'cuda' and epoch % 10 == 0:
             allocated = torch.cuda.memory_allocated(0) / 1e9
             reserved = torch.cuda.memory_reserved(0) / 1e9
-            print(f"Эпоха {epoch:3d}/{max_epochs} | Train: {train_loss:.6f} | Val: {val_loss:.6f} | GPU: {allocated:.2f}/{reserved:.2f} GB")
+            print(f"Эпоха {epoch:3d}/{max_epochs} | "
+                  f"Train: {train_loss:.6f} | Val: {val_loss:.6f} | "
+                  f"GPU: {allocated:.2f}/{reserved:.2f} GB")
         else:
             print(f"Эпоха {epoch:3d}/{max_epochs} | Train: {train_loss:.6f} | Val: {val_loss:.6f}")
-        
-        # Save best model
+
+        # === сохранение лучшей модели ===
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_epoch = epoch
@@ -898,15 +896,15 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
                 'val_loss': val_loss,
                 'train_loss': train_loss
             }, os.path.join(output_dir, 'best_model.pth'))
-            print(f"  -> Лучшая модель сохранена")
-    
-    # Save final model
+            print(" -> Лучшая модель сохранена")
+
+    # финальная модель
     torch.save({
         'epoch': max_epochs,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict()
     }, os.path.join(output_dir, 'final_model.pth'))
-    
+
     with open(os.path.join(output_dir, 'training_history.json'), 'w') as f:
         json.dump({
             'metadata': {
@@ -917,11 +915,9 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
             },
             'history': history
         }, f, indent=2)
-    
+
     print(f"\nОбучение завершено! Лучшая эпоха: {best_epoch}\n")
     return history
-
-
 
 def main():
     # Configuration based on DATA_SOURCE
@@ -937,35 +933,44 @@ def main():
         raise ValueError(f"Unknown DATA_SOURCE: {DATA_SOURCE}. Must be 'ERA5' or 'MERRA2'")
 
     OUTPUT_DIR = f'./training_{DATA_SOURCE.lower()}_extended'
-    
 
-
-    # Calculate dimensions
     n_variables = 5  # t, r, z, u, v
-    input_dim = len(INPUT_LEVELS) * n_variables  # 24 * 5 = 120
-    output_dim = len(OUTPUT_LEVELS) * n_variables  # 17 * 5 = 85
+    input_dim = len(INPUT_LEVELS) * n_variables
+    output_dim = len(OUTPUT_LEVELS) * n_variables
 
     torch.manual_seed(42)
     np.random.seed(42)
 
-    
-    # ============================================================================
-    # GPU OPTIMIZATION SETTINGS
-    # ============================================================================
-    if torch.cuda.is_available():
-        # Enable cuDNN benchmarking for faster convolutions
+    # ==========================================================
+    # GPU / Multi-GPU / DDP настройки
+    # ==========================================================
+    use_cuda = torch.cuda.is_available()
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    distributed = (world_size > 1) and use_cuda
+
+    if use_cuda:
         cudnn.benchmark = True
-        cudnn.deterministic = False  # Set True only if you need exact reproducibility
-        
-        # Print GPU info
-        print(f"GPU обнаружен: {torch.cuda.get_device_name(0)}")
-        print(f"Доступно VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
-        print(f"Выделено: {torch.cuda.memory_allocated(0) / 1e9:.2f} GB")
-        print(f"Кэшировано: {torch.cuda.memory_reserved(0) / 1e9:.2f} GB\n")
-    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Устройство вычислений: {device}\n")
-    print(f"Источник данных: {DATA_SOURCE}")
+        cudnn.deterministic = False
+
+    if distributed:
+        # torchrun задаёт LOCAL_RANK, RANK, WORLD_SIZE
+        local_rank = int(os.environ["LOCAL_RANK"])
+        torch.cuda.set_device(local_rank)
+        device = torch.device("cuda", local_rank)
+
+        torch.distributed.init_process_group(backend="nccl", init_method="env://")
+        rank = torch.distributed.get_rank()
+
+        if rank == 0:
+            print(f"DDP: world_size={world_size}, local_rank={local_rank}")
+    else:
+        device = torch.device('cuda' if use_cuda else 'cpu')
+        print(f"Устройство вычислений: {device}")
+        if use_cuda:
+            print(f"GPU(0): {torch.cuda.get_device_name(0)}")
+            print(f"Всего GPU: {torch.cuda.device_count()}")
+
+    print(f"\nИсточник данных: {DATA_SOURCE}")
     print(f"Входные уровни: {len(INPUT_LEVELS)} (от {INPUT_LEVELS[0]} до {INPUT_LEVELS[-1]} гПа)")
     print(f"Выходные уровни: {len(OUTPUT_LEVELS)} (от {OUTPUT_LEVELS[0]} до {OUTPUT_LEVELS[-1]} гПа)")
     print(f"Размерность входа: {input_dim}")
@@ -973,11 +978,10 @@ def main():
 
     # Проверка наличия данных
     print(f"Проверка данных {DATA_SOURCE}...\n")
-
     required_files = len(DOWNLOAD_YEARS) * len([m for s in SEASONS_TO_DOWNLOAD for m in SEASONAL_MONTHS[s]]) * 10
     existing_files = [f for f in os.listdir(DATA_DIR) if f.endswith('.nc')] if os.path.exists(DATA_DIR) else []
 
-    if len(existing_files) < required_files * 0.5:  # Если меньше 50% требуемых файлов
+    if len(existing_files) < required_files * 0.5:
         print(f"Недостаточно данных. Начинается загрузка {DATA_SOURCE}...")
         print(f"Будет загружено ~{required_files} файлов для периода {DOWNLOAD_YEARS[0]}-{DOWNLOAD_YEARS[-1]}\n")
 
@@ -1005,7 +1009,6 @@ def main():
         print(f"✓ Обнаружено {len(existing_files)} файлов {DATA_SOURCE}\n")
 
     data_files = sorted([os.path.join(DATA_DIR, f) for f in os.listdir(DATA_DIR) if f.endswith('.nc')])
-
     if len(data_files) == 0:
         print("ОШИБКА: Файлы данных не найдены!")
         return
@@ -1017,13 +1020,13 @@ def main():
 
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
-    # Determine hidden_dims based on input_dim
-    if input_dim >= 145:  # Extended configuration
+    # hidden_dims
+    if input_dim >= 145:
         hidden_dims = [768, 512, 384, 256, 384, 512, 768]
-    else:  # Standard configuration
+    else:
         hidden_dims = [512, 384, 256, 256, 384, 512]
 
-    # Save configuration
+    # Конфиг и статы
     config = {
         'data_source': DATA_SOURCE,
         'input_levels': INPUT_LEVELS,
@@ -1035,37 +1038,64 @@ def main():
     }
     with open(os.path.join(OUTPUT_DIR, 'config.json'), 'w') as f:
         json.dump(config, f, indent=2)
-
     with open(os.path.join(OUTPUT_DIR, 'normalization_stats.json'), 'w') as f:
         json.dump(full_dataset.stats, f, indent=2)
 
+    # Трен/валид сплит
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
-    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size],
-                                              generator=torch.Generator().manual_seed(42))
+    train_dataset, val_dataset = random_split(
+        full_dataset,
+        [train_size, val_size],
+        generator=torch.Generator().manual_seed(42)
+    )
+
+    # Если DDP — используем DistributedSampler
+    if distributed:
+        train_sampler = torch.utils.data.distributed.DistributedSampler(
+            train_dataset,
+            num_replicas=world_size,
+            rank=torch.distributed.get_rank(),
+            shuffle=True,
+            drop_last=True
+        )
+        val_sampler = torch.utils.data.distributed.DistributedSampler(
+            val_dataset,
+            num_replicas=world_size,
+            rank=torch.distributed.get_rank(),
+            shuffle=False,
+            drop_last=False
+        )
+        shuffle_train = False
+        shuffle_val = False
+    else:
+        train_sampler = None
+        val_sampler = None
+        shuffle_train = True
+        shuffle_val = False
 
     train_loader = DataLoader(
-        train_dataset, 
-        batch_size=BATCH_SIZE, 
-        shuffle=True, 
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=shuffle_train,
+        sampler=train_sampler,
         drop_last=True,
-        num_workers=4,  # CRITICAL: Parallel data loading
-        pin_memory=True,  # CRITICAL: Faster CPU->GPU transfer
-        persistent_workers=True  # Keep workers alive between epochs
+        num_workers=4,
+        pin_memory=use_cuda,
+        persistent_workers=True if use_cuda else False
     )
-    
+
     val_loader = DataLoader(
-        val_dataset, 
-        batch_size=BATCH_SIZE, 
-        shuffle=False,
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=shuffle_val,
+        sampler=val_sampler,
         num_workers=2,
-        pin_memory=True,
-        persistent_workers=True
+        pin_memory=use_cuda,
+        persistent_workers=True if use_cuda else False
     )
 
-    
-
-    # Updated model architecture for extended levels
+    # Модель
     model = create_model(
         input_dim=input_dim,
         output_dim=output_dim,
@@ -1073,13 +1103,35 @@ def main():
         n_output_levels=len(OUTPUT_LEVELS),
         device=device
     )
+
     model = model.to(device)
+
+    # Если много GPU, но не DDP — DataParallel
+    if (not distributed) and use_cuda and torch.cuda.device_count() > 1:
+        print(f"Используется DataParallel на {torch.cuda.device_count()} GPU")
+        model = torch.nn.DataParallel(model)
+
+    # Если DDP, оборачиваем в DistributedDataParallel
+    if distributed:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[device.index],
+            output_device=device.index,
+            find_unused_parameters=False
+        )
 
     print(f"Параметров модели: {sum(p.numel() for p in model.parameters()):,}\n")
 
-    train_model(model, train_loader, val_loader, device, MAX_EPOCHS, OUTPUT_DIR)
+    # В DDP `train_model` вызывается на каждом процессе, но сохранять модели/логи имеет смысл только на rank 0.
+    if (not distributed) or (torch.distributed.get_rank() == 0):
+        history = train_model(model, train_loader, val_loader, device, MAX_EPOCHS, OUTPUT_DIR)
+        print(f"\nФайлы сохранены: {OUTPUT_DIR}/best_model.pth, normalization_stats.json, config.json")
+    else:
+        # Для остальных ранков просто тренируем без сохранения файлов
+        _ = train_model(model, train_loader, val_loader, device, MAX_EPOCHS, OUTPUT_DIR)
 
-    print(f"\nФайлы сохранены: {OUTPUT_DIR}/best_model.pth, normalization_stats.json, config.json")
+    if distributed:
+        torch.distributed.destroy_process_group()
 
 
 if __name__ == '__main__':
