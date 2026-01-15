@@ -71,7 +71,7 @@ PRESSURE_LEVELS_MERRA2 = [
 ]
 
 BATCH_SIZE = 256
-MAX_EPOCHS = 10
+MAX_EPOCHS = 50
 
 # Extended pressure levels to 0.1 hPa for both sources
 # Input levels: troposphere (1000-100 hPa)
