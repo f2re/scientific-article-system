@@ -70,7 +70,7 @@ PRESSURE_LEVELS_MERRA2 = [
     70, 50, 40, 30, 20, 10, 7, 5, 4, 3, 2, 1, 0.7, 0.5, 0.4, 0.3, 0.1
 ]
 
-BATCH_SIZE = 64
+BATCH_SIZE = 256
 MAX_EPOCHS = 10
 
 # Extended pressure levels to 0.1 hPa for both sources
@@ -795,7 +795,7 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
     
     use_amp = (device.type == 'cuda')
     scaler = GradScaler(enabled=use_amp)
-    accumulation_steps = 2
+    accumulation_steps = 1
     
     history = {'train_loss': [], 'val_loss': [], 'learning_rate': []}
     best_val_loss = float('inf')
@@ -1105,7 +1105,7 @@ def main():
         shuffle=shuffle_train,
         sampler=train_sampler,
         drop_last=True,
-        num_workers=4,
+        num_workers=8,
         pin_memory=use_cuda,
         persistent_workers=True if use_cuda else False
     )
@@ -1115,7 +1115,7 @@ def main():
         batch_size=BATCH_SIZE,
         shuffle=shuffle_val,
         sampler=val_sampler,
-        num_workers=2,
+        num_workers=4,
         pin_memory=use_cuda,
         persistent_workers=True if use_cuda else False
     )
