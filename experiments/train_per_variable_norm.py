@@ -663,7 +663,13 @@ class AtmosphericDatasetPerVarNorm(Dataset):
         
         for file_idx, file_path in enumerate(data_files):
             try:
-                with xr.open_dataset(file_path, decode_times=False) as ds:
+                with xr.open_dataset(
+                        filepath, 
+                        decode_times=False,
+                        engine='h5netcdf',      # ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
+                        mask_and_scale=True,
+                        phony_dims='sort'
+                    ) as ds:
                     # Идентификация измерений
                     time_dim = next((c for c in ['valid_time', 'time', 't'] if c in ds.dims), None)
                     level_dim = next((c for c in ['pressure_level', 'level', 'plev', 'lev'] if c in ds.dims), None)
@@ -799,8 +805,8 @@ class AtmosphericDatasetPerVarNorm(Dataset):
 def train_model(model, train_loader, val_loader, device, max_epochs, output_dir):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
-    # ИСПРАВЛЕНИЕ #1: уменьшаем learning rate
-    optimizer = optim.Adam(model.parameters(), lr=1e-4, betas=(0.9, 0.999))  # было 1e-3
+    # ИСПРАВЛЕНИЕ #1: уменьшаем learning rate для стабильности
+    optimizer = optim.Adam(model.parameters(), lr=5e-5, betas=(0.9, 0.999))  # было 1e-4, затем 1e-3
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=1e-7)
     
     criterion = PhysicsInformedLoss(
@@ -860,8 +866,9 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
                 if torch.isnan(grad_norm) or torch.isinf(grad_norm):
                     print(f"  WARNING: NaN/Inf градиенты в батче {batch_idx}, пропускаем")
                     optimizer.zero_grad(set_to_none=True)
+                    scaler.update()  # CRITICAL: Must update scaler before continue
                     continue
-                
+
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
