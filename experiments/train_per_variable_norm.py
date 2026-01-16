@@ -664,7 +664,7 @@ class AtmosphericDatasetPerVarNorm(Dataset):
         for file_idx, file_path in enumerate(data_files):
             try:
                 with xr.open_dataset(
-                        filepath, 
+                        file_path,
                         decode_times=False,
                         engine='h5netcdf',      # ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
                         mask_and_scale=True,
