@@ -70,8 +70,8 @@ PRESSURE_LEVELS_MERRA2 = [
     70, 50, 40, 30, 20, 10, 7, 5, 4, 3, 2, 1, 0.7, 0.5, 0.4, 0.3, 0.1
 ]
 
-BATCH_SIZE = 256
-MAX_EPOCHS = 50
+BATCH_SIZE = 64
+MAX_EPOCHS = 10
 
 # Extended pressure levels to 0.1 hPa for both sources
 # Input levels: troposphere (1000-100 hPa)
@@ -497,7 +497,23 @@ def download_merra2_https(
                     print(f"  Скачано: 100%         ")
 
                     # Открыть скачанный файл и выполнить субсетирование
-                    ds = xr.open_dataset(temp_file, decode_times=False)
+                    try:
+                        ds = xr.open_dataset(
+                            temp_file, 
+                            decode_times=False,
+                            engine='h5netcdf',     # Для HDF5 файлов MERRA-2
+                            invalid_netcdf=True    # Разрешить нестандартные файлы
+                        )
+                    except Exception as e_h5:
+                        # Fallback на netcdf4
+                        try:
+                            ds = xr.open_dataset(
+                                temp_file, 
+                                decode_times=False,
+                                engine='netcdf4'
+                            )
+                        except Exception as e_nc4:
+                            raise RuntimeError(f"Не удалось открыть файл ни h5netcdf, ни netcdf4. Ошибки: h5={str(e_h5)[:100]}, nc4={str(e_nc4)[:100]}")
 
                     # Выбор нужных переменных и уровней
                     var_list = list(VARIABLES_MERRA2.keys())
@@ -812,7 +828,6 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
         train_loss = 0.0
         optimizer.zero_grad(set_to_none=True)
         num_train_batches = 0
-        scaler_unscaled = False  # Флаг для отслеживания вызова unscale_()
         
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             num_train_batches += 1
@@ -844,7 +859,6 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 if torch.isnan(grad_norm) or torch.isinf(grad_norm):
                     print(f"  WARNING: NaN/Inf градиенты в батче {batch_idx}, пропускаем")
-                    scaler.update()  # ✓ КРИТИЧЕСКИ ВАЖНО: сбросить состояние scaler
                     optimizer.zero_grad(set_to_none=True)
                     continue
                 
@@ -1105,7 +1119,7 @@ def main():
         shuffle=shuffle_train,
         sampler=train_sampler,
         drop_last=True,
-        num_workers=8,
+        num_workers=4,
         pin_memory=use_cuda,
         persistent_workers=True if use_cuda else False
     )
@@ -1115,7 +1129,7 @@ def main():
         batch_size=BATCH_SIZE,
         shuffle=shuffle_val,
         sampler=val_sampler,
-        num_workers=4,
+        num_workers=2,
         pin_memory=use_cuda,
         persistent_workers=True if use_cuda else False
     )
