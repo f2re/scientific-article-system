@@ -32,14 +32,14 @@ from model_architecture import  create_model, PhysicsInformedLoss
 DATA_SOURCE = 'MERRA2'  # Переключите на 'MERRA2' для использования MERRA-2
 
 # Временной диапазон загрузки
-DOWNLOAD_YEARS = list(range(2015, 2017))  # 2015-2020
+DOWNLOAD_YEARS = list(range(2015, 2021))  # 2015-2020
 
 # Определение сезонных месяцев
 SEASONAL_MONTHS = {
-    'winter': ['12', '02'],      # Зимние месяцы
-    'spring': ['03', '05'],      # Весенние месяцы
-    'summer': ['06', '08'],      # Летние месяцы
-    'autumn': ['09', '11']       # Осенние месяцы
+    'winter': ['12','01', '02'],      # Зимние месяцы
+    'spring': ['03','04', '05'],      # Весенние месяцы
+    'summer': ['06','07', '08'],      # Летние месяцы
+    'autumn': ['09','10', '11']       # Осенние месяцы
 }
 
 # Выбор сезонов для загрузки (можно изменить)
@@ -70,8 +70,8 @@ PRESSURE_LEVELS_MERRA2 = [
     70, 50, 40, 30, 20, 10, 7, 5, 4, 3, 2, 1, 0.7, 0.5, 0.4, 0.3, 0.1
 ]
 
-BATCH_SIZE = 128
-MAX_EPOCHS = 100
+BATCH_SIZE = 256
+MAX_EPOCHS = 150
 
 # Extended pressure levels to 0.1 hPa for both sources
 # Input levels: troposphere (1000-100 hPa)
@@ -106,187 +106,6 @@ MERRA2_CONFIG = {
     'path': 'MERRA2/M2I3NPASM.5.12.4',
     'stream': 400  # Номер потока обработки
 }
-
-
-def download_era5_with_rh(
-    output_dir='./data/era5',
-    years=None,
-    seasons=None,
-    time_slices=None,
-    days_per_month=None,
-    day_step=10,  # НОВЫЙ ПАРАМЕТР: шаг выборки дней
-    skip_existing=True
-):
-    """
-    Загрузка данных реанализа ERA5 с относительной влажностью.
-    
-    Parameters
-    ----------
-    output_dir : str
-        Директория для сохранения загруженных файлов NetCDF
-    years : list of int, optional
-        Список годов для загрузки. По умолчанию используется DOWNLOAD_YEARS
-    seasons : list of str, optional
-        Список сезонов из SEASONAL_MONTHS. По умолчанию SEASONS_TO_DOWNLOAD
-    time_slices : list of str, optional
-        Временные срезы в формате 'HH:MM'. По умолчанию TIME_SLICES
-    days_per_month : int, optional
-        Количество дней для загрузки в каждом месяце (1-31).
-        None означает загрузку всех дней месяца с учетом day_step
-    day_step : int
-        Шаг выборки дней (1 = все дни, 10 = каждый 10-й день и т.д.)
-        По умолчанию 1 (загрузка всех дней)
-    skip_existing : bool
-        Пропускать ли существующие файлы (True) или перезаписывать (False)
-        
-    Returns
-    -------
-    bool
-        True при успешной загрузке, False при критических ошибках
-        
-    Examples
-    --------
-    # Загрузка каждого 5-го дня
-    download_era5_with_rh(day_step=5)
-    
-    # Загрузка каждого 10-го дня за зимние месяцы 2015-2020
-    download_era5_with_rh(
-        years=list(range(2015, 2021)),
-        seasons=['winter'],
-        day_step=10
-    )
-    
-    # Загрузка первых 15 дней каждого месяца с шагом 3 дня
-    download_era5_with_rh(
-        days_per_month=15,
-        day_step=3  # дни: 1, 4, 7, 10, 13
-    )
-    """
-    try:
-        import cdsapi
-    except ImportError:
-        print("ОШИБКА: Модуль cdsapi не установлен. Выполните: pip install cdsapi")
-        return False
-
-    # Использование глобальных параметров, если не заданы локальные
-    if years is None:
-        years = DOWNLOAD_YEARS
-    if seasons is None:
-        seasons = SEASONS_TO_DOWNLOAD
-    if time_slices is None:
-        time_slices = TIME_SLICES
-
-    # Валидация параметра day_step
-    if day_step < 1:
-        print(f"ПРЕДУПРЕЖДЕНИЕ: day_step={day_step} некорректен. Установлен day_step=1")
-        day_step = 1
-
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-    # Формирование списка месяцев на основе выбранных сезонов
-    months_to_download = []
-    for season in seasons:
-        if season in SEASONAL_MONTHS:
-            months_to_download.extend(SEASONAL_MONTHS[season])
-        else:
-            print(f"ПРЕДУПРЕЖДЕНИЕ: Неизвестный сезон '{season}', пропускается")
-    
-    months_to_download = sorted(list(set(months_to_download)))
-
-    print("=" * 80)
-    print("ЗАГРУЗКА ДАННЫХ ERA5 С ОТНОСИТЕЛЬНОЙ ВЛАЖНОСТЬЮ")
-    print("=" * 80)
-    print(f"Годы:      {years[0]}-{years[-1]} ({len(years)} лет)")
-    print(f"Сезоны:    {', '.join(seasons)}")
-    print(f"Месяцы:    {', '.join(months_to_download)}")
-    print(f"Шаг по дням: {day_step} (каждый {day_step}-й день)")
-    print(f"Переменные: {len(VARIABLES)} ({', '.join([v.split('_')[0] for v in VARIABLES])})")
-    print(f"Уровни:    {len(PRESSURE_LEVELS)} изобарических поверхностей")
-    print(f"Временные срезы: {time_slices}")
-    print(f"Выходная директория: {output_dir}")
-    print("=" * 80)
-
-    c = cdsapi.Client()
-    
-    total_files = 0
-    downloaded_files = 0
-    skipped_files = 0
-    error_files = 0
-
-    # Итерация по годам и месяцам
-    for year in years:
-        for month in months_to_download:
-            # Определение количества дней в месяце
-            if month in ['01', '03', '05', '07', '08', '10', '12']:
-                max_days = 31
-            elif month in ['04', '06', '09', '11']:
-                max_days = 30
-            elif month == '02':
-                # Проверка високосного года
-                max_days = 29 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 28
-            else:
-                max_days = 31
-            
-            # Определение диапазона дней для загрузки
-            if days_per_month is not None:
-                num_days = min(days_per_month, max_days)
-            else:
-                num_days = max_days
-            
-            # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: применение шага day_step
-            # Формируем список дней с заданным шагом
-            days = [str(d).zfill(2) for d in range(1, num_days + 1, day_step)]
-            
-            print(f"\n{year}-{month}: загрузка дней {', '.join(days[:5])}{'...' if len(days) > 5 else ''}")
-            
-            for day in days:
-                total_files += 1
-                output_file = f'{output_dir}/era5_pl_{year}{month}{day}.nc'
-                
-                if skip_existing and os.path.exists(output_file):
-                    skipped_files += 1
-                    if total_files % 10 == 0:
-                        print(f"[{total_files}] Существует: {year}-{month}-{day}")
-                    continue
-                
-                print(f"[{total_files}] Загрузка: {year}-{month}-{day}...")
-                
-                try:
-                    c.retrieve(
-                        'reanalysis-era5-pressure-levels',
-                        {
-                            'product_type': 'reanalysis',
-                            'format': 'netcdf',
-                            'variable': VARIABLES,
-                            'pressure_level': PRESSURE_LEVELS,
-                            'year': str(year),
-                            'month': month,
-                            'day': day,
-                            'time': time_slices,
-                            'area': SPATIAL_AREA,
-                        },
-                        output_file
-                    )
-                    downloaded_files += 1
-                    print(f"  ✓ Загружено успешно: {output_file}")
-                    
-                except Exception as e:
-                    error_files += 1
-                    print(f"  ✗ ОШИБКА при загрузке: {e}")
-                    if os.path.exists(output_file):
-                        os.remove(output_file)
-                    continue
-
-    print("\n" + "=" * 80)
-    print("ЗАГРУЗКА ЗАВЕРШЕНА")
-    print("=" * 80)
-    print(f"Всего файлов:          {total_files}")
-    print(f"Загружено новых:       {downloaded_files}")
-    print(f"Пропущено (существ.):  {skipped_files}")
-    print(f"Ошибок:                {error_files}")
-    print("=" * 80)
-    
-    return True
 
 
 def download_merra2_https(
@@ -755,8 +574,15 @@ class AtmosphericDatasetPerVarNorm(Dataset):
         stats = {}
 
         for var in self.var_names:
-            input_data = np.concatenate([p[f'{var}_input'] for p in self.profiles])
-            output_data = np.concatenate([p[f'{var}_output'] for p in self.profiles])
+            # input_data = np.concatenate([p[f'{var}_input'] for p in self.profiles])
+            # output_data = np.concatenate([p[f'{var}_output'] for p in self.profiles])
+            # ДЛЯ ТЕМПЕРАТУРЫ: log-space нормализация
+            if var == 't':
+                input_data = np.log(np.concatenate([p[f'{var}_input'] for p in self.profiles]))
+                output_data = np.log(np.concatenate([p[f'{var}_output'] for p in self.profiles]))
+            else:
+                input_data = np.concatenate([p[f'{var}_input'] for p in self.profiles])
+                output_data = np.concatenate([p[f'{var}_output'] for p in self.profiles])
 
             stats[var] = {
                 'input_mean': float(input_data.mean()),
@@ -806,32 +632,57 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     # ИСПРАВЛЕНИЕ #1: уменьшаем learning rate для стабильности
-    optimizer = optim.Adam(model.parameters(), lr=5e-5, betas=(0.9, 0.999))  # было 1e-4, затем 1e-3
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=1e-7)
+    optimizer = optim.AdamW(model.parameters(), 
+                        lr=3e-4,  # Базовая ставка выше в 6 раз
+                        betas=(0.9, 0.95),  # beta2 снижен для стабильности
+                        weight_decay=0.01)  # Регуляризация
+    from torch.optim.lr_scheduler import OneCycleLR
+    total_steps = max_epochs * len(train_loader)
+    scheduler = OneCycleLR(
+        optimizer,
+        max_lr=3e-4,
+        total_steps=total_steps,
+        pct_start=0.1,  # 10% эпох на warm-up
+        anneal_strategy='cos',
+        div_factor=25.0,  # Начальный LR = max_lr/25 = 1.2e-5
+        final_div_factor=1000.0  # Финальный LR = max_lr/1000 = 3e-7
+    )
     
     criterion = PhysicsInformedLoss(
         n_output_levels=len(OUTPUT_LEVELS),
-        thermal_wind_weight=0.1,
-        wind_component_weight=2.0
+        thermal_wind_weight=0.5,  # Увеличен с 0.1 до 0.5
+        wind_component_weight=2.0,
+        hydrostatic_weight=0.3  # НОВЫЙ параметр
     ).to(device)
     
     use_amp = (device.type == 'cuda')
     scaler = GradScaler(enabled=use_amp)
-    accumulation_steps = 1
+    accumulation_steps = 4
     
-    history = {'train_loss': [], 'val_loss': [], 'learning_rate': []}
+    history = {
+        'train_loss': [], 'val_loss': [], 'learning_rate': [],
+        'train_mse_T': [], 'train_mse_U': [], 'train_mse_V': [],
+        'val_mse_T': [], 'val_mse_U': [], 'val_mse_V': []
+    }
     best_val_loss = float('inf')
     best_epoch = 0
+    patience = 20  # Early stopping
+    patience_counter = 0
     
     print(f"\nНачало обучения...")
+    print(f"Learning Rate: {optimizer.param_groups[0]['lr']:.2e} (с warm-up)")
+    print(f"Эффективный batch size: {BATCH_SIZE * accumulation_steps}")
+    print(f"Физические веса: thermal_wind={criterion.tw_weight.item():.2f}, "
+          f"hydrostatic={criterion.hs_weight.item():.2f}")
     print(f"Mixed Precision: {'Enabled' if use_amp else 'Disabled'}")
-    print(f"Gradient Accumulation: {accumulation_steps} steps")
-    print(f"Learning Rate: {optimizer.param_groups[0]['lr']}")
-    print(f"Эффективный batch size: {BATCH_SIZE * accumulation_steps}\n")
+    print(f"Early Stopping: patience={patience}")
+    print(f"{'='*80}\n")
     
     for epoch in range(1, max_epochs + 1):
+        # ========== TRAINING ==========
         model.train()
         train_loss = 0.0
+        train_metrics = {'mse_T': 0.0, 'mse_U': 0.0, 'mse_V': 0.0}
         optimizer.zero_grad(set_to_none=True)
         num_train_batches = 0
         
@@ -840,9 +691,9 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             
-            # ИСПРАВЛЕНИЕ #2: проверка на NaN во входных данных
+            # Проверка на NaN
             if torch.isnan(inputs).any() or torch.isnan(targets).any():
-                print(f"  WARNING: NaN в данных батча {batch_idx}")
+                print(f"  WARNING: NaN в данных батча {batch_idx}, пропуск")
                 continue
             
             with autocast(enabled=use_amp):
@@ -850,47 +701,53 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
                 loss, loss_dict = criterion(outputs, targets)
                 loss = loss / accumulation_steps
             
-            # ИСПРАВЛЕНИЕ #3: проверка на NaN в loss
+            # Проверка на NaN/Inf в loss
             if torch.isnan(loss) or torch.isinf(loss):
-                print(f"  WARNING: NaN/Inf loss в батче {batch_idx}, пропускаем")
+                print(f"  WARNING: NaN/Inf loss в батче {batch_idx}, пропуск")
                 optimizer.zero_grad(set_to_none=True)
                 continue
             
             scaler.scale(loss).backward()
             
-            # ИСПРАВЛЕНИЕ #4: правильная обработка gradient accumulation
+            # Gradient accumulation
             if (batch_idx + 1) % accumulation_steps == 0:
                 scaler.unscale_(optimizer)
-                # Проверка градиентов на NaN перед clipping
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                
                 if torch.isnan(grad_norm) or torch.isinf(grad_norm):
-                    print(f"  WARNING: NaN/Inf градиенты в батче {batch_idx}, пропускаем")
+                    print(f"  WARNING: NaN/Inf градиенты в батче {batch_idx}, пропуск")
                     optimizer.zero_grad(set_to_none=True)
-                    scaler.update()  # CRITICAL: Must update scaler before continue
+                    scaler.update()
                     continue
-
+                
                 scaler.step(optimizer)
                 scaler.update()
+                scheduler.step()  # ВАЖНО: шаг после каждого обновления весов
                 optimizer.zero_grad(set_to_none=True)
             
             train_loss += loss.item() * accumulation_steps
+            train_metrics['mse_T'] += loss_dict.get('mse_T', 0.0)
+            train_metrics['mse_U'] += loss_dict.get('mse_U', 0.0)
+            train_metrics['mse_V'] += loss_dict.get('mse_V', 0.0)
         
-        # ИСПРАВЛЕНИЕ #5: обработка остатка gradient accumulation в конце эпохи
+        # Обработка остатка gradient accumulation
         if num_train_batches % accumulation_steps != 0:
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
+            scheduler.step()
             optimizer.zero_grad(set_to_none=True)
         
         if num_train_batches > 0:
             train_loss /= num_train_batches
-        else:
-            train_loss = float('nan')
+            for key in train_metrics:
+                train_metrics[key] /= num_train_batches
         
-        # === ВАЛИДАЦИЯ ===
+        # ========== VALIDATION ==========
         model.eval()
         val_loss = 0.0
+        val_metrics = {'mse_T': 0.0, 'mse_U': 0.0, 'mse_V': 0.0}
         num_val_batches = 0
         
         with torch.no_grad():
@@ -908,59 +765,87 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
                 
                 if not torch.isnan(loss):
                     val_loss += loss.item()
+                    val_metrics['mse_T'] += loss_dict.get('mse_T', 0.0)
+                    val_metrics['mse_U'] += loss_dict.get('mse_U', 0.0)
+                    val_metrics['mse_V'] += loss_dict.get('mse_V', 0.0)
         
         if num_val_batches > 0:
             val_loss /= num_val_batches
-        else:
-            val_loss = float('nan')
+            for key in val_metrics:
+                val_metrics[key] /= num_val_batches
         
-        scheduler.step()
-        
+        # Сохранение истории
+        current_lr = optimizer.param_groups[0]['lr']
         history['train_loss'].append(float(train_loss))
         history['val_loss'].append(float(val_loss))
-        history['learning_rate'].append(float(optimizer.param_groups[0]['lr']))
+        history['learning_rate'].append(float(current_lr))
+        history['train_mse_T'].append(train_metrics['mse_T'])
+        history['train_mse_U'].append(train_metrics['mse_U'])
+        history['train_mse_V'].append(train_metrics['mse_V'])
+        history['val_mse_T'].append(val_metrics['mse_T'])
+        history['val_mse_U'].append(val_metrics['mse_U'])
+        history['val_mse_V'].append(val_metrics['mse_V'])
         
-        if device.type == 'cuda' and epoch % 10 == 0:
-            allocated = torch.cuda.memory_allocated(0) / 1e9
-            reserved = torch.cuda.memory_reserved(0) / 1e9
+        # Логирование
+        if epoch % 5 == 0 or epoch == 1:
             print(f"Эпоха {epoch:3d}/{max_epochs} | "
                   f"Train: {train_loss:.6f} | Val: {val_loss:.6f} | "
-                  f"GPU: {allocated:.2f}/{reserved:.2f} GB")
-        else:
-            print(f"Эпоха {epoch:3d}/{max_epochs} | Train: {train_loss:.6f} | Val: {val_loss:.6f}")
+                  f"LR: {current_lr:.2e} | "
+                  f"ValMSE[T/U/V]: {val_metrics['mse_T']:.4f}/{val_metrics['mse_U']:.4f}/{val_metrics['mse_V']:.4f}")
         
+        # Сохранение лучшей модели
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_epoch = epoch
+            patience_counter = 0
+            
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
                 'scaler_state_dict': scaler.state_dict(),
                 'val_loss': val_loss,
-                'train_loss': train_loss
+                'train_loss': train_loss,
+                'val_metrics': val_metrics
             }, os.path.join(output_dir, 'best_model.pth'))
-            print("  -> Лучшая модель сохранена")
+            
+            print(f"  ✓ Лучшая модель сохранена (эпоха {epoch})")
+        else:
+            patience_counter += 1
+        
+        # Early stopping
+        if patience_counter >= patience:
+            print(f"\nEarly stopping на эпохе {epoch} (patience={patience})")
+            break
     
-    # финальная модель
+    # Финальная модель
     torch.save({
-        'epoch': max_epochs,
+        'epoch': epoch,
         'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict()
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict()
     }, os.path.join(output_dir, 'final_model.pth'))
     
+    # Сохранение истории
     with open(os.path.join(output_dir, 'training_history.json'), 'w') as f:
         json.dump({
             'metadata': {
                 'best_epoch': best_epoch,
                 'best_val_loss': float(best_val_loss),
+                'final_epoch': epoch,
                 'mixed_precision': use_amp,
-                'accumulation_steps': accumulation_steps
+                'accumulation_steps': accumulation_steps,
+                'effective_batch_size': BATCH_SIZE * accumulation_steps
             },
             'history': history
         }, f, indent=2)
     
-    print(f"\nОбучение завершено! Лучшая эпоха: {best_epoch}\n")
+    print(f"\n{'='*80}")
+    print(f"ОБУЧЕНИЕ ЗАВЕРШЕНО!")
+    print(f"Лучшая эпоха: {best_epoch} | Лучший Val Loss: {best_val_loss:.6f}")
+    print(f"{'='*80}\n")
+    
     return history
 
 
@@ -1030,27 +915,16 @@ def main():
     if len(existing_files) < required_files * 0.5:
         print(f"Недостаточно данных. Начинается загрузка {DATA_SOURCE}...")
         print(f"Будет загружено ~{required_files} файлов для периода {DOWNLOAD_YEARS[0]}-{DOWNLOAD_YEARS[-1]}\n")
-
-        if DATA_SOURCE == 'ERA5':
-            download_era5_with_rh(
-                output_dir=DATA_DIR,
-                years=DOWNLOAD_YEARS,
-                seasons=SEASONS_TO_DOWNLOAD,
-                time_slices=TIME_SLICES,
-                day_step=10,
-                days_per_month=None,
-                skip_existing=True
-            )
-        elif DATA_SOURCE == 'MERRA2':
-            download_merra2_https(
-                output_dir=DATA_DIR,
-                years=DOWNLOAD_YEARS,
-                seasons=SEASONS_TO_DOWNLOAD,
-                time_slices=TIME_SLICES,
-                # day_step=10,
-                days_per_month=1,
-                skip_existing=True
-            )
+        
+        download_merra2_https(
+            output_dir=DATA_DIR,
+            years=DOWNLOAD_YEARS,
+            seasons=SEASONS_TO_DOWNLOAD,
+            time_slices=TIME_SLICES,
+            day_step=10,
+            # days_per_month=1,
+            skip_existing=True
+        )
     else:
         print(f"✓ Обнаружено {len(existing_files)} файлов {DATA_SOURCE}\n")
 

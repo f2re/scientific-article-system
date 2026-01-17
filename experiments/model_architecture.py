@@ -504,26 +504,54 @@ class MultiHeadAtmosphericResNet(nn.Module):
 
 class PhysicsInformedLoss(nn.Module):
     """
-    Комбинированная функция потерь с физическими ограничениями.
-    ОПТИМИЗИРОВАНО для GPU: все операции векторизованы и на device.
+    УЛУЧШЕННАЯ физически-информированная функция потерь для стратосферы/мезосферы.
+    
+    Включает:
+    1. Базовый MSE с адаптивными весами по уровням
+    2. Уравнение теплового ветра (усилено для стратосферы)
+    3. НОВОЕ: Гидростатический баланс
+    4. НОВОЕ: Ограничение на вертикальные градиенты
     """
+    
     def __init__(
         self,
-        n_output_levels: int = 13,
-        thermal_wind_weight: float = 0.1,
-        wind_component_weight: float = 2.0
+        n_output_levels: int = 17,
+        thermal_wind_weight: float = 0.5,  # Увеличен с 0.1
+        wind_component_weight: float = 2.0,
+        hydrostatic_weight: float = 0.3,  # НОВЫЙ параметр
+        gradient_weight: float = 0.1  # НОВЫЙ параметр
     ):
         super(PhysicsInformedLoss, self).__init__()
         self.n_levels = n_output_levels
         
-        # ИСПРАВЛЕНИЕ: регистрируем веса как buffers
+        # Регистрируем веса как buffers (автоматически на GPU)
         self.register_buffer('tw_weight', torch.tensor(thermal_wind_weight))
         self.register_buffer('wind_weight', torch.tensor(wind_component_weight))
+        self.register_buffer('hs_weight', torch.tensor(hydrostatic_weight))
+        self.register_buffer('grad_weight', torch.tensor(gradient_weight))
         self.register_buffer('epsilon', torch.tensor(1e-8))
         
-        # MSE reduction='none' для гибкости
-        self.mse = nn.MSELoss(reduction='mean')
-
+        # НОВОЕ: Адаптивные веса по уровням (больший вес для верхних уровней)
+        level_weights = torch.exp(torch.linspace(0, 1, n_output_levels))
+        level_weights = level_weights / level_weights.sum() * n_output_levels
+        self.register_buffer('level_weights', level_weights)
+        
+        # Физические константы
+        self.register_buffer('R_d', torch.tensor(287.0))  # Дж/(кг·К)
+        self.register_buffer('g', torch.tensor(9.81))     # м/с²
+        
+        # Уровни давления для гидростатики (OUTPUT_LEVELS из train script)
+        # Будут установлены при первом вызове forward
+        self.pressure_levels = None
+        
+        self.mse = nn.MSELoss(reduction='none')
+    
+    def set_pressure_levels(self, levels: list):
+        """Установка уровней давления для гидростатических расчетов"""
+        if self.pressure_levels is None:
+            self.register_buffer('pressure_levels', 
+                               torch.tensor(levels, dtype=torch.float32))
+    
     def thermal_wind_constraint(
         self,
         T_pred: torch.Tensor,
@@ -531,74 +559,136 @@ class PhysicsInformedLoss(nn.Module):
         V_pred: torch.Tensor
     ) -> torch.Tensor:
         """
-        ОПТИМИЗИРОВАНО: все операции на GPU, векторизованы.
+        Уравнение теплового ветра: ∂u/∂ln(p) ∝ -∂T/∂y
+        Оптимизировано для GPU, векторизовано.
         """
         if self.n_levels < 2:
-            # ИСПРАВЛЕНИЕ: создаем тензор на правильном device
             return torch.zeros(1, device=T_pred.device, dtype=T_pred.dtype)
-
-        # Вертикальные градиенты (GPU-эффективно)
+        
+        # Вертикальные градиенты
         dT = T_pred[:, 1:] - T_pred[:, :-1]  # [batch, n_levels-1]
         dU = U_pred[:, 1:] - U_pred[:, :-1]
         dV = V_pred[:, 1:] - V_pred[:, :-1]
-
-        # ОПТИМИЗАЦИЯ: векторизованное вычисление косинусного сходства
-        # Избегаем F.cosine_similarity для каждой пары отдельно
         
         # Нормализация векторов
         dT_norm = dT / (dT.norm(dim=1, keepdim=True) + self.epsilon)
         dU_norm = dU / (dU.norm(dim=1, keepdim=True) + self.epsilon)
         dV_norm = dV / (dV.norm(dim=1, keepdim=True) + self.epsilon)
         
-        # Косинусное сходство через скалярное произведение
+        # Косинусное сходство (должно быть высоким для физичности)
         cos_sim_U = (dT_norm * dU_norm).sum(dim=1).abs().mean()
         cos_sim_V = (dT_norm * dV_norm).sum(dim=1).abs().mean()
-
-        # Потеря
-        tw_loss = (2.0 - cos_sim_U - cos_sim_V)  # 0 при идеальной корреляции
+        
+        # Потеря: 0 при идеальной корреляции, 2 при противофазе
+        tw_loss = (2.0 - cos_sim_U - cos_sim_V)
         
         return tw_loss
-
+    
+    def hydrostatic_constraint(
+        self,
+        T_pred: torch.Tensor,
+        Z_pred: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        НОВОЕ: Гидростатический баланс dZ/d(ln p) = -RT/g
+        Критично для стратосферы, где гидростатика доминирует.
+        """
+        if self.n_levels < 2 or self.pressure_levels is None:
+            return torch.zeros(1, device=T_pred.device, dtype=T_pred.dtype)
+        
+        # Разности геопотенциала между уровнями
+        dZ = Z_pred[:, 1:] - Z_pred[:, :-1]  # [batch, n_levels-1]
+        
+        # Средняя температура между уровнями
+        T_mean = (T_pred[:, 1:] + T_pred[:, :-1]) / 2.0
+        
+        # Разности логарифмов давления
+        p_levels = self.pressure_levels  # [n_levels]
+        d_lnp = torch.log(p_levels[1:] / p_levels[:-1])  # [n_levels-1]
+        
+        # Теоретическое изменение геопотенциала
+        # dZ = -(R*T/g) * d(ln p)
+        dZ_theory = -(self.R_d * T_mean / self.g) * d_lnp.unsqueeze(0)
+        
+        # MSE между предсказанным и теоретическим
+        hs_loss = F.mse_loss(dZ, dZ_theory)
+        
+        return hs_loss
+    
+    def vertical_gradient_constraint(
+        self,
+        T_pred: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        НОВОЕ: Сглаживание вертикальных градиентов температуры.
+        Предотвращает нефизичные скачки в стратосфере.
+        """
+        if self.n_levels < 3:
+            return torch.zeros(1, device=T_pred.device, dtype=T_pred.dtype)
+        
+        # Вторая производная (кривизна профиля)
+        dT = T_pred[:, 1:] - T_pred[:, :-1]
+        d2T = dT[:, 1:] - dT[:, :-1]
+        
+        # Потеря: штраф за резкие изменения градиента
+        grad_loss = (d2T ** 2).mean()
+        
+        return grad_loss
+    
     def forward(
         self,
         predictions: torch.Tensor,
         targets: torch.Tensor
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
         """
-        Все операции на GPU, минимум синхронизаций CPU-GPU.
+        Вычисление общей потери с физическими ограничениями.
+        Все операции на GPU, минимум синхронизаций.
         """
-        # Извлечение переменных через slicing (GPU-эффективно)
+        # Извлечение переменных (порядок: T, RH, Z, U, V)
         T_pred = predictions[:, :self.n_levels]
         RH_pred = predictions[:, self.n_levels:2*self.n_levels]
         Z_pred = predictions[:, 2*self.n_levels:3*self.n_levels]
         U_pred = predictions[:, 3*self.n_levels:4*self.n_levels]
         V_pred = predictions[:, 4*self.n_levels:]
-
+        
         T_true = targets[:, :self.n_levels]
         RH_true = targets[:, self.n_levels:2*self.n_levels]
         Z_true = targets[:, 2*self.n_levels:3*self.n_levels]
         U_true = targets[:, 3*self.n_levels:4*self.n_levels]
         V_true = targets[:, 4*self.n_levels:]
-
-        # MSE для каждой переменной (всё на GPU)
-        mse_T = self.mse(T_pred, T_true)
-        mse_RH = self.mse(RH_pred, RH_true)
-        mse_Z = self.mse(Z_pred, Z_true)
-        mse_U = self.mse(U_pred, U_true)
-        mse_V = self.mse(V_pred, V_true)
-
-        # Взвешенная сумма (используем buffer weights)
+        
+        # MSE для каждой переменной с адаптивными весами по уровням
+        mse_T_raw = self.mse(T_pred, T_true)  # [batch, n_levels]
+        mse_T = (mse_T_raw * self.level_weights.unsqueeze(0)).mean()
+        
+        mse_RH_raw = self.mse(RH_pred, RH_true)
+        mse_RH = (mse_RH_raw * self.level_weights.unsqueeze(0)).mean()
+        
+        mse_Z_raw = self.mse(Z_pred, Z_true)
+        mse_Z = (mse_Z_raw * self.level_weights.unsqueeze(0)).mean()
+        
+        mse_U_raw = self.mse(U_pred, U_true)
+        mse_U = (mse_U_raw * self.level_weights.unsqueeze(0)).mean()
+        
+        mse_V_raw = self.mse(V_pred, V_true)
+        mse_V = (mse_V_raw * self.level_weights.unsqueeze(0)).mean()
+        
+        # Взвешенная сумма MSE (ветер имеет больший вес)
         mse_total = (mse_T + mse_RH + mse_Z + 
-                     self.wind_weight * (mse_U + mse_V)) / (3.0 + 2.0 * self.wind_weight)
-
-        # Physical constraint
+                    self.wind_weight * (mse_U + mse_V)) / (3.0 + 2.0 * self.wind_weight)
+        
+        # Физические ограничения
         tw_loss = self.thermal_wind_constraint(T_pred, U_pred, V_pred)
-
+        hs_loss = self.hydrostatic_constraint(T_pred, Z_pred)
+        grad_loss = self.vertical_gradient_constraint(T_pred)
+        
         # Общая потеря
-        total_loss = mse_total + self.tw_weight * tw_loss
-
-        # ВАЖНО: .item() вызывает CPU-GPU синхронизацию!
-        # Делаем это один раз в конце, не в цикле
+        total_loss = (mse_total + 
+                     self.tw_weight * tw_loss +
+                     self.hs_weight * hs_loss +
+                     self.grad_weight * grad_loss)
+        
+        # Словарь компонент (для логирования)
         loss_dict = {
             'total': total_loss.item(),
             'mse': mse_total.item(),
@@ -607,9 +697,11 @@ class PhysicsInformedLoss(nn.Module):
             'mse_Z': mse_Z.item(),
             'mse_U': mse_U.item(),
             'mse_V': mse_V.item(),
-            'thermal_wind': tw_loss.item()
+            'thermal_wind': tw_loss.item(),
+            'hydrostatic': hs_loss.item(),
+            'gradient': grad_loss.item()
         }
-
+        
         return total_loss, loss_dict
 
 
@@ -619,29 +711,28 @@ class PhysicsInformedLoss(nn.Module):
 # ============================================================================
 def create_model(
     input_dim: int = 120,
-    output_dim: int = 65,
+    output_dim: int = 85,
     n_input_levels: int = 24,
-    n_output_levels: int = 13,
+    n_output_levels: int = 17,
     device: str = 'cpu',
-    random_seed: int = 42
+    random_seed: int = 42,
+    output_pressure_levels: list = None  # НОВЫЙ параметр
 ) -> MultiHeadAtmosphericResNet:
     """
     Создание модели с правильной инициализацией на GPU.
+    
+    НОВОЕ: поддержка передачи уровней давления для физических расчетов.
     """
-    # Фиксируем random seed
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     
-    # ИСПРАВЛЕНИЕ: проверяем device правильно
     if isinstance(device, str):
         device = torch.device(device)
     
     if device.type == 'cuda':
         torch.cuda.manual_seed(random_seed)
-        torch.cuda.manual_seed_all(random_seed)  # Для multi-GPU
-        # ВАЖНО: для обучения используем benchmark=True (уже в main)
-        # torch.backends.cudnn.deterministic = True только для отладки
-
+        torch.cuda.manual_seed_all(random_seed)
+    
     # Создаем модель
     model = MultiHeadAtmosphericResNet(
         input_dim=input_dim,
@@ -650,32 +741,35 @@ def create_model(
         n_output_levels=n_output_levels,
         dropout_rate=0.2
     )
-
-    # КРИТИЧНО: переносим модель на GPU ДО инициализации весов
+    
     model = model.to(device)
-
+    
     print("=" * 80)
-    print("УЛУЧШЕННАЯ MULTI-HEAD АРХИТЕКТУРА")
+    print("УЛУЧШЕННАЯ MULTI-HEAD АРХИТЕКТУРА С ФИЗИЧЕСКИМИ ОГРАНИЧЕНИЯМИ")
     print("=" * 80)
     print(f"Устройство: {device}")
     print(f"Входная размерность: {input_dim} ({n_input_levels} уровней × 5 переменных)")
     print(f"Выходная размерность: {output_dim} ({n_output_levels} уровней × 5 переменных)")
     print(f"Число параметров: {model.count_parameters():,}")
     
+    if output_pressure_levels:
+        print(f"Уровни давления: {output_pressure_levels[0]}-{output_pressure_levels[-1]} гПа")
+    
     if device.type == 'cuda':
         print(f"\nGPU память:")
-        print(f"  Выделено под модель: {torch.cuda.memory_allocated(device.index or 0) / 1e9:.3f} GB")
+        print(f"  Выделено: {torch.cuda.memory_allocated(device.index or 0) / 1e9:.3f} GB")
         print(f"  Зарезервировано: {torch.cuda.memory_reserved(device.index or 0) / 1e9:.3f} GB")
     
     print(f"\nКлючевые улучшения:")
-    print(f"  ✓ Раздельные энкодеры для термодинамики (T, RH, Z) и динамики (U, V)")
-    print(f"  ✓ Cross-Attention для моделирования теплового ветра")
-    print(f"  ✓ Vertical Self-Attention для ветровых компонент")
-    print(f"  ✓ Отдельные выходные головы для каждой переменной")
-    print(f"  ✓ Все операции оптимизированы для GPU")
+    print(f"  ✓ Раздельные энкодеры: термодинамика (T,RH,Z) + динамика (U,V)")
+    print(f"  ✓ Cross-Attention: моделирование теплового ветра")
+    print(f"  ✓ Vertical Attention: для ветровых компонент")
+    print(f"  ✓ Гидростатический баланс: dZ/d(ln p) = -RT/g")
+    print(f"  ✓ Адаптивные веса: больший вес для верхних уровней")
     print("=" * 80)
-
+    
     return model
+
 
 
 
