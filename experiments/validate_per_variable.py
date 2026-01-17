@@ -32,25 +32,23 @@ def load_model_and_stats(model_path, stats_path, config_path, device):
     input_dim = config['input_dim']
     output_dim = config['output_dim']
     data_source = config.get('data_source', 'ERA5')
-    hidden_dims = config.get('hidden_dims', None)  # Load hidden_dims if present
+    n_input_levels = len(config['input_levels'])
+    n_output_levels = len(config['output_levels'])
 
     print(f"\nConfiguration:")
     print(f"  Data source: {data_source}")
     print(f"  Input dimension: {input_dim}")
     print(f"  Output dimension: {output_dim}")
-    print(f"  Input levels: {len(config['input_levels'])}")
-    print(f"  Output levels: {len(config['output_levels'])}")
-    if hidden_dims:
-        print(f"  Hidden dimensions: {hidden_dims}")
+    print(f"  Input levels: {n_input_levels}")
+    print(f"  Output levels: {n_output_levels}")
 
     # Load model with correct dimensions
     model = MultiHeadAtmosphericResNet(
         input_dim=input_dim,
         output_dim=output_dim,
-        hidden_dims=hidden_dims,  # Use hidden_dims from config
-        dropout_rate=0.1,
-        use_batch_norm=True,
-        activation='gelu'
+        n_input_levels=n_input_levels,
+        n_output_levels=n_output_levels,
+        dropout_rate=0.2
     )
 
     checkpoint = torch.load(model_path, map_location=device)
