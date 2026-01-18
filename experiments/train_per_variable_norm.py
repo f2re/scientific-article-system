@@ -691,14 +691,30 @@ class AtmosphericDatasetPerVarNorm(Dataset):
                 var_input = profile[f'{var}_input']
                 var_output = profile[f'{var}_output']
 
-                var_input_norm = (var_input - self.stats[var]['input_mean']) / (self.stats[var]['input_std'] + 1e-6)
-                var_output_norm = (var_output - self.stats[var]['output_mean']) / (self.stats[var]['output_std'] + 1e-6)
+                # ИСПРАВЛЕНИЕ: применяем log для температуры перед нормализацией
+                if var == 't':
+                    var_input_transformed = np.log(var_input)
+                    var_output_transformed = np.log(var_output)
+                else:
+                    var_input_transformed = var_input
+                    var_output_transformed = var_output
+
+                var_input_norm = (var_input_transformed - self.stats[var]['input_mean']) / (self.stats[var]['input_std'] + 1e-6)
+                var_output_norm = (var_output_transformed - self.stats[var]['output_mean']) / (self.stats[var]['output_std'] + 1e-6)
 
                 input_norm.extend(var_input_norm)
                 output_norm.extend(var_output_norm)
 
             profile['input_norm'] = np.array(input_norm, dtype=np.float32)
             profile['output_norm'] = np.array(output_norm, dtype=np.float32)
+
+        # НОВОЕ: Проверка на NaN после нормализации
+        nan_count = sum(1 for p in self.profiles if np.isnan(p['input_norm']).any() or np.isnan(p['output_norm']).any())
+        if nan_count > 0:
+            print(f"⚠ ВНИМАНИЕ: Обнаружено {nan_count} профилей с NaN после нормализации!")
+            # Удаляем профили с NaN
+            self.profiles = [p for p in self.profiles if not (np.isnan(p['input_norm']).any() or np.isnan(p['output_norm']).any())]
+            print(f"  Удалено {nan_count} профилей. Осталось: {len(self.profiles)}")
 
         print(f"Все {len(self.profiles)} профилей нормализованы\n")
 
@@ -716,29 +732,33 @@ class AtmosphericDatasetPerVarNorm(Dataset):
 def train_model(model, train_loader, val_loader, device, max_epochs, output_dir):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
-    # ИСПРАВЛЕНИЕ #1: уменьшаем learning rate для стабильности
-    optimizer = optim.AdamW(model.parameters(), 
-                        lr=3e-4,  # Базовая ставка выше в 6 раз
-                        betas=(0.9, 0.95),  # beta2 снижен для стабильности
-                        weight_decay=0.01)  # Регуляризация
+    # ИСПРАВЛЕНИЕ: оптимальные параметры для стабильного обучения
+    optimizer = optim.AdamW(model.parameters(),
+                        lr=1e-4,  # УМЕНЬШЕНО с 3e-4 до 1e-4
+                        betas=(0.9, 0.999),  # Стандартные значения для стабильности
+                        weight_decay=0.01,
+                        eps=1e-8)  # Добавлен epsilon для численной стабильности
     from torch.optim.lr_scheduler import OneCycleLR
     total_steps = max_epochs * len(train_loader)
     scheduler = OneCycleLR(
         optimizer,
-        max_lr=3e-4,
+        max_lr=1e-4,  # УМЕНЬШЕНО с 3e-4
         total_steps=total_steps,
-        pct_start=0.1,  # 10% эпох на warm-up
+        pct_start=0.3,  # УВЕЛИЧЕНО с 0.1 до 0.3 (30% на warm-up)
         anneal_strategy='cos',
-        div_factor=25.0,  # Начальный LR = max_lr/25 = 1.2e-5
-        final_div_factor=1000.0  # Финальный LR = max_lr/1000 = 3e-7
+        div_factor=100.0,  # УВЕЛИЧЕНО с 25 до 100: начальный LR = 1e-6
+        final_div_factor=10000.0  # Финальный LR = 1e-8
     )
     
     criterion = PhysicsInformedLoss(
         n_output_levels=len(OUTPUT_LEVELS),
-        thermal_wind_weight=0.5,  # Увеличен с 0.1 до 0.5
+        thermal_wind_weight=0.1,  # УМЕНЬШЕНО с 0.5 до 0.1 для стабильности
         wind_component_weight=2.0,
-        hydrostatic_weight=0.3  # НОВЫЙ параметр
+        hydrostatic_weight=0.05  # УМЕНЬШЕНО с 0.3 до 0.05 для стабильности
     ).to(device)
+
+    # ИСПРАВЛЕНИЕ: устанавливаем уровни давления для гидростатических расчетов
+    criterion.set_pressure_levels(OUTPUT_LEVELS)
     
     use_amp = (device.type == 'cuda')
     scaler = GradScaler(enabled=use_amp)
@@ -755,10 +775,13 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
     patience_counter = 0
     
     print(f"\nНачало обучения...")
-    print(f"Learning Rate: {optimizer.param_groups[0]['lr']:.2e} (с warm-up)")
+    print(f"Initial Learning Rate: {optimizer.param_groups[0]['lr']:.2e}")
+    print(f"Max Learning Rate: 1e-4 (достигается после 30% эпох)")
+    print(f"Warm-up: 30% эпох")
+    print(f"Gradient Clipping: max_norm=5.0")
     print(f"Эффективный batch size: {BATCH_SIZE * accumulation_steps}")
-    print(f"Физические веса: thermal_wind={criterion.tw_weight.item():.2f}, "
-          f"hydrostatic={criterion.hs_weight.item():.2f}")
+    print(f"Физические веса: thermal_wind={criterion.tw_weight.item():.3f}, "
+          f"hydrostatic={criterion.hs_weight.item():.3f}")
     print(f"Mixed Precision: {'Enabled' if use_amp else 'Disabled'}")
     print(f"Early Stopping: patience={patience}")
     print(f"{'='*80}\n")
@@ -797,7 +820,7 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
             # Gradient accumulation
             if (batch_idx + 1) % accumulation_steps == 0:
                 scaler.unscale_(optimizer)
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)  # УВЕЛИЧЕНО с 1.0 до 5.0
                 
                 if torch.isnan(grad_norm) or torch.isinf(grad_norm):
                     print(f"  WARNING: NaN/Inf градиенты в батче {batch_idx}, пропуск")
@@ -818,7 +841,7 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
         # Обработка остатка gradient accumulation
         if num_train_batches % accumulation_steps != 0:
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)  # УВЕЛИЧЕНО с 1.0 до 5.0
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
