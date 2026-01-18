@@ -539,18 +539,20 @@ class PhysicsInformedLoss(nn.Module):
         # Физические константы
         self.register_buffer('R_d', torch.tensor(287.0))  # Дж/(кг·К)
         self.register_buffer('g', torch.tensor(9.81))     # м/с²
-        
-        # Уровни давления для гидростатики (OUTPUT_LEVELS из train script)
-        # Будут установлены при первом вызове forward
-        self.pressure_levels = None
-        
+
+        # ИСПРАВЛЕНИЕ: регистрируем pressure_levels как buffer сразу (пустой тензор)
+        # Будут установлены через set_pressure_levels()
+        self.register_buffer('pressure_levels', torch.tensor([], dtype=torch.float32))
+        self.pressure_levels_set = False
+
         self.mse = nn.MSELoss(reduction='none')
-    
+
     def set_pressure_levels(self, levels: list):
         """Установка уровней давления для гидростатических расчетов"""
-        if self.pressure_levels is None:
-            self.register_buffer('pressure_levels', 
-                               torch.tensor(levels, dtype=torch.float32))
+        if not self.pressure_levels_set:
+            # Обновляем buffer (не регистрируем заново!)
+            self.pressure_levels = torch.tensor(levels, dtype=torch.float32, device=self.pressure_levels.device)
+            self.pressure_levels_set = True
     
     def thermal_wind_constraint(
         self,
@@ -593,7 +595,7 @@ class PhysicsInformedLoss(nn.Module):
         НОВОЕ: Гидростатический баланс dZ/d(ln p) = -RT/g
         Критично для стратосферы, где гидростатика доминирует.
         """
-        if self.n_levels < 2 or self.pressure_levels is None:
+        if self.n_levels < 2 or not self.pressure_levels_set or len(self.pressure_levels) == 0:
             return torch.zeros(1, device=T_pred.device, dtype=T_pred.dtype)
         
         # Разности геопотенциала между уровнями

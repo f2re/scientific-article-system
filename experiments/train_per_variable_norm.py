@@ -676,7 +676,14 @@ class AtmosphericDatasetPerVarNorm(Dataset):
                 'output_std': float(output_data.std())
             }
 
-            print(f"  {var.upper()}: вх_среднее={stats[var]['input_mean']:.2f}, вых_среднее={stats[var]['output_mean']:.2f}")
+            if var == 't':
+                # Для температуры показываем и log-space, и реальные значения
+                real_input_mean = np.exp(stats[var]['input_mean'])
+                real_output_mean = np.exp(stats[var]['output_mean'])
+                print(f"  {var.upper()}: log(вх)={stats[var]['input_mean']:.2f} → {real_input_mean:.1f}K, "
+                      f"log(вых)={stats[var]['output_mean']:.2f} → {real_output_mean:.1f}K")
+            else:
+                print(f"  {var.upper()}: вх_среднее={stats[var]['input_mean']:.2f}, вых_среднее={stats[var]['output_mean']:.2f}")
 
         return stats
 
@@ -1053,6 +1060,45 @@ def main():
         data_files, INPUT_LEVELS, OUTPUT_LEVELS,
         stats=None, data_source=DATA_SOURCE
     )
+
+    # ВАЛИДАЦИЯ: проверка данных после создания датасета
+    print("\n" + "="*80)
+    print("ВАЛИДАЦИЯ ДАННЫХ")
+    print("="*80)
+
+    # Проверяем несколько случайных сэмплов на NaN
+    print("Проверка случайных сэмплов на NaN...")
+    sample_indices = np.random.choice(len(full_dataset), min(100, len(full_dataset)), replace=False)
+    nan_samples = 0
+    for idx in sample_indices:
+        x, y = full_dataset[idx]
+        if torch.isnan(x).any() or torch.isnan(y).any() or torch.isinf(x).any() or torch.isinf(y).any():
+            nan_samples += 1
+
+    if nan_samples > 0:
+        print(f"⚠ ВНИМАНИЕ: {nan_samples}/100 сэмплов содержат NaN/Inf!")
+        raise ValueError("Данные содержат NaN/Inf после нормализации. Остановка обучения.")
+    else:
+        print(f"✓ Все проверенные сэмплы валидны (0 NaN/Inf)")
+
+    # Статистика нормализованных данных
+    print("\nСтатистика нормализованных данных (первые 1000 сэмплов):")
+    sample_data_x = []
+    sample_data_y = []
+    for i in range(min(1000, len(full_dataset))):
+        x, y = full_dataset[i]
+        sample_data_x.append(x.numpy())
+        sample_data_y.append(y.numpy())
+
+    sample_data_x = np.array(sample_data_x)
+    sample_data_y = np.array(sample_data_y)
+
+    print(f"  Вход - mean: {sample_data_x.mean():.4f}, std: {sample_data_x.std():.4f}, "
+          f"min: {sample_data_x.min():.4f}, max: {sample_data_x.max():.4f}")
+    print(f"  Выход - mean: {sample_data_y.mean():.4f}, std: {sample_data_y.std():.4f}, "
+          f"min: {sample_data_y.min():.4f}, max: {sample_data_y.max():.4f}")
+
+    print("="*80 + "\n")
 
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
