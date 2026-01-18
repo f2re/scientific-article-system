@@ -95,7 +95,7 @@ deep learning temperature profile stratosphere
 
 # Data Assimilation
 data assimilation radiosonde stratosphere
-atmospheric reanalysis ERA5 vertical profile
+atmospheric reanalysis MERRA2 vertical profile
 4D-Var upper atmosphere
 ```
 
@@ -177,7 +177,7 @@ Balanced scoring for broad topics
 
 ### 1. Query Formulation
 - Use specific technical terms, not generic words
-- Include method names (e.g., "4D-Var", "GPS-RO", "ERA5")
+- Include method names (e.g., "4D-Var", "GPS-RO", "MERRA2")
 - Combine domain + method (e.g., "neural network atmospheric profile")
 - Test queries in arXiv first to verify terminology
 
@@ -269,7 +269,7 @@ cat > papers/search_queries.txt << 'EOF'
 radiosonde stratospheric profile extrapolation
 GPS radio occultation vertical profile upper atmosphere
 machine learning atmospheric profile neural network
-data assimilation ERA5 vertical structure
+data assimilation MERRA2 vertical structure
 EOF
 
 # 2. Execute search

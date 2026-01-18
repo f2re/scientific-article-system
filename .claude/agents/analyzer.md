@@ -23,7 +23,7 @@ For each paper, produce **valid JSON only** with this exact schema:
   "relevance_justification": "2-3 sentences: domain match, methodology applicability, novelty",
   "methodology": {
     "models": [{"name": "GraphCast", "type": "GNN", "description": "16-layer encoder-processor-decoder", "parameters": "36.7M"}],
-    "datasets": [{"name": "ERA5", "description": "ECMWF reanalysis 1979-2022", "resolution": "0.25°", "variables": ["T2m", "Z500"]}],
+    "datasets": [{"name": "MERRA2", "description": "MERRA2 reanalysis 1979-2022", "resolution": "0.25°", "variables": ["T2m", "Z500"]}],
     "approach": "Training strategy, loss functions, optimization details",
     "baselines": ["IFS HRES", "PANGU-Weather"],
     "metrics": ["RMSE", "ACC", "CRPS"]
@@ -64,7 +64,7 @@ For each paper, produce **valid JSON only** with this exact schema:
 ### Methodology
 Identify precisely:
 - **Models**: Exact name (U-Net, ConvLSTM, ViT), architectural features, modifications
-- **Datasets**: Name, version (ERA5, CMIP6, WeatherBench), temporal coverage, spatial resolution, variables, size
+- **Datasets**: Name, version (MERRA2, CMIP6, WeatherBench), temporal coverage, spatial resolution, variables, size
 - **Experiments**: Train/val/test split, metrics (RMSE, MAE, ACC, CRPS), baselines, compute resources
 - **Innovations**: Novel techniques, adaptations, optimization tricks
 

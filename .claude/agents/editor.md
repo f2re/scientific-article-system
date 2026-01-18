@@ -79,6 +79,110 @@ Process issues systematically:
 **Estimated effort**: Time estimate
 ```
 
+### Phase 2B: AUTOR_STYLE Compliance Enforcement
+
+**Purpose**: Ensure final article strictly adheres to author's established style profile (AUTOR_STYLE.md)
+
+**Critical checks**:
+
+1. **Sentence complexity**:
+   - Average length: 20-35 words
+   - Complex subordinate sentences predominate
+   - NO sequences of short simple sentences (< 15 words)
+
+2. **Mathematical formalization**:
+   - All formulas numbered: (1), (2), (3)...
+   - All variables defined with "где x – ..., y – ..."
+   - All mathematical objects introduced with "Пусть X – ..., тогда..."
+
+3. **Voice distribution**:
+   - Passive constructions: 40-50%
+   - Impersonal constructions: 30-40%
+   - Inclusive first plural: 20-30%
+   - NO first person singular ("я")
+
+4. **Characteristic phrases** (minimum frequencies per section):
+   - "Рассмотрим": 3-5 times per 500-700 words
+   - "Пусть": 8-15 times (math-heavy sections)
+   - "Тогда": 6-12 times
+   - "Следовательно": 4-8 times
+   - "Обозначим": 4-8 times
+
+5. **Abbreviations**:
+   - ALL defined on first use: "термин (АББР)"
+   - Consistent usage throughout
+
+6. **Numerical precision**:
+   - ALL numbers have units: "2.1°C", "3.4 м/с"
+   - Experimental results have uncertainties: "2.1±0.3°C"
+   - Improvements quantified: "улучшение на 23%"
+   - NO vague claims without numbers
+
+7. **Formatting**:
+   - Section headers: ПРОПИСНЫЕ БУКВЫ (UPPERCASE)
+   - Tables: Russian captions "**Таблица N.** Описание..." with arrows (↑↓)
+   - Lists: Numbered 1) ...; 2) ...; 3) ...
+   - Visual references: "На рисунке X..."
+
+8. **No English insertions within Russian text**:
+   - ❌ WRONG: "penalty-функции", "baseline-моделей", "fine-tuning параметров"
+   - ✅ CORRECT: "штрафные функции", "базовых моделей", "методы адаптации параметров (fine-tuning)"
+   - English terms ONLY in parentheses after Russian: "методы эффективной адаптации (parameter-efficient fine-tuning)"
+   - Variables in formulas can use English: E_baseline is acceptable, but prefer E_базовая
+
+**Auto-fix procedure**:
+
+```bash
+# Fix 1: Combine short sentences into complex structures
+# Find sentences < 15 words and combine with next sentence using:
+# - Participial clauses (причастные обороты)
+# - Gerund clauses (деепричастные обороты)
+# - Subordinate clauses with "который", "где", "при этом"
+
+# Fix 2: Add missing formula numbering
+# Pattern: All display formulas \[...\] must have (N) on right side
+
+# Fix 3: Add variable definitions
+# After each numbered formula, add: "где x – описание, y – описание"
+
+# Fix 4: Verify abbreviation definitions
+# First use must be: "полное название (АББР)"
+
+# Fix 5: Quantify vague claims
+# Replace: "хорошие результаты" → "RMSE = X±Y единицы"
+# Replace: "значительное улучшение" → "улучшение на X%"
+
+# Fix 6: Uppercase section headers
+# Pattern: ## N. НАЗВАНИЕ РАЗДЕЛА
+
+# Fix 7: Remove English insertions within Russian text
+# Find patterns: [а-яё]+-[a-z]+, [a-z]+-[а-яё]+
+# Replace:
+#   "penalty-функци" → "штрафн функци"
+#   "baseline-модел" → "базов модел"
+#   "fine-tuning параметр" → "адаптац параметр"
+# Move English to parentheses: "русский термин (English term)"
+```
+
+**Style compliance report** (generate before finalization):
+```json
+{
+  "sentence_length": {"mean": 27.3, "std": 8.2, "status": "PASS"},
+  "voice_distribution": {"passive": "45%", "impersonal": "35%", "inclusive": "20%", "status": "PASS"},
+  "formulas": {"total": 12, "numbered": 12, "with_definitions": 12, "status": "PASS"},
+  "abbreviations": {"total": 18, "defined": 18, "consistent": true, "status": "PASS"},
+  "characteristic_phrases": {
+    "Рассмотрим": {"count": 8, "expected": "5-10", "status": "PASS"},
+    "Пусть": {"count": 15, "expected": "10-20", "status": "PASS"}
+  },
+  "numerical_precision": {"numbers_with_units": "100%", "status": "PASS"},
+  "overall_score": "9.2/10",
+  "status": "PASS"
+}
+```
+
+**Minimum passing score**: 9.0/10 (fail → flag for manual review)
+
 ### Phase 3: Document Changes
 
 Create `CHANGES.md`:
@@ -319,6 +423,20 @@ Before passing to finalizer/submitter:
 - [ ] All citations validated
 - [ ] No placeholders remain
 - [ ] Word count within limits
+
+### AUTOR_STYLE Compliance (MANDATORY)
+- [ ] Sentence length mean 22-32 words
+- [ ] Voice distribution verified (passive 40-50%, impersonal 30-40%)
+- [ ] All formulas numbered and variables defined with "где..."
+- [ ] All abbreviations defined on first use
+- [ ] Characteristic phrases present at expected frequencies
+- [ ] Section headers in UPPERCASE (ПРОПИСНЫЕ БУКВЫ)
+- [ ] Tables have Russian captions with arrows (↑↓)
+- [ ] No vague claims without quantification
+- [ ] No English insertions within Russian text (penalty-функции → штрафные функции)
+- [ ] English terms only in parentheses after Russian translation
+- [ ] Style compliance score ≥ 9.0/10
+- [ ] Style compliance report generated
 
 ## Output Files
 
