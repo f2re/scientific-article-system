@@ -70,7 +70,7 @@ PRESSURE_LEVELS_MERRA2 = [
     70, 50, 40, 30, 20, 10, 7, 5, 4, 3, 2, 1, 0.7, 0.5, 0.4, 0.3, 0.1
 ]
 
-BATCH_SIZE = 256
+BATCH_SIZE = 128
 MAX_EPOCHS = 150
 
 # Extended pressure levels to 0.1 hPa for both sources
@@ -657,7 +657,7 @@ def train_model(model, train_loader, val_loader, device, max_epochs, output_dir)
     
     use_amp = (device.type == 'cuda')
     scaler = GradScaler(enabled=use_amp)
-    accumulation_steps = 4
+    accumulation_steps = 1
     
     history = {
         'train_loss': [], 'val_loss': [], 'learning_rate': [],
@@ -1021,7 +1021,8 @@ def main():
         output_dim=output_dim,
         n_input_levels=len(INPUT_LEVELS),
         n_output_levels=len(OUTPUT_LEVELS),
-        device=device
+        device=device,
+        output_pressure_levels=OUTPUT_LEVELS  # НОВЫЙ параметр
     )
 
     model = model.to(device)
