@@ -455,33 +455,38 @@ L_physics – физический член, λ = 0.1 – весовой коэ�
 
 Run through this 30-second check:
 
-1. **Count sentence length** (sample 5 sentences):
+1. **Check for English insertions** (CRITICAL):
+   - [ ] No "penalty-функции", "baseline-моделей", etc.?
+   - [ ] English only in parentheses: "штрафные функции (penalty)" ✅
+   - [ ] No mixed constructions: "fine-tuning параметров" ❌
+
+2. **Count sentence length** (sample 5 sentences):
    - [ ] Average 20-35 words?
 
-2. **Check formulas**:
+3. **Check formulas**:
    - [ ] All numbered?
    - [ ] All variables defined with "где..."?
 
-3. **Check abbreviations**:
+4. **Check abbreviations**:
    - [ ] First mention has full form?
    - [ ] Used consistently after?
 
-4. **Count characteristic phrases**:
+5. **Count characteristic phrases**:
    - [ ] "Рассмотрим" appears 3+ times?
    - [ ] "Пусть" appears 5+ times (if math-heavy)?
    - [ ] "Тогда" appears 4+ times?
 
-5. **Check numbers**:
+6. **Check numbers**:
    - [ ] All have units?
    - [ ] Experimental results have ± uncertainty?
    - [ ] Comparisons quantified (X% improvement)?
 
-6. **Check tables**:
+7. **Check tables**:
    - [ ] Caption present?
    - [ ] Arrows in headers?
    - [ ] Best results in bold?
 
-7. **Check voice**:
+8. **Check voice**:
    - [ ] No first person singular "я"?
    - [ ] Mix of passive, impersonal, inclusive plural?
 
