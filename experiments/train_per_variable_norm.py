@@ -455,11 +455,13 @@ class AtmosphericDatasetPerVarNorm(Dataset):
 
     def _load_data(self, data_files):
         """
-        УСТОЙЧИВАЯ ВЕРСИЯ с обработкой исключений и принудительной очисткой ресурсов.
+        Устойчивая загрузка с обработкой ошибок ФС и принудительной очисткой ресурсов.
         """
         import gc
+        import time
+        
         print(f"Загрузка {len(data_files)} файлов {self.data_source}...")
-        print("УСКОРЕННАЯ загрузка с защитой от сбоев файловой системы\n")
+        print("УСКОРЕННАЯ загрузка: векторизованная выборка с защитой от сбоев\n")
         
         var_mapping = {
             't': 'temperature',
@@ -473,35 +475,31 @@ class AtmosphericDatasetPerVarNorm(Dataset):
         n_input_levels = len(self.input_levels)
         rng = np.random.default_rng(42)
         
-        # Счетчики для статистики
         successful_files = 0
         failed_files = 0
         corrupted_files = []
         
         for file_idx, file_path in enumerate(data_files):
-            ds = None  # Гарантируем начальное состояние
+            ds = None
+            ds_subset = None
             
             try:
-                # ============================================================
-                # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ #1: Проверка файла перед открытием
-                # ============================================================
                 if not os.path.exists(file_path):
-                    print(f"  ⚠ Файл {file_idx+1}: не существует, пропускаем")
+                    print(f"  ⚠ Файл {file_idx+1}: не существует")
                     failed_files += 1
                     continue
                 
-                # Проверка размера (пустые/поврежденные файлы)
                 file_size = os.path.getsize(file_path)
-                if file_size < 1000:  # Минимальный размер NetCDF ~1KB
-                    print(f"  ⚠ Файл {file_idx+1}: слишком мал ({file_size} bytes), удаляем")
-                    os.remove(file_path)
+                if file_size < 1000:
+                    print(f"  ⚠ Файл {file_idx+1}: поврежден ({file_size} B), удаляем")
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
                     corrupted_files.append(file_path)
                     failed_files += 1
                     continue
                 
-                # ============================================================
-                # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ #2: Явное управление контекстом
-                # ============================================================
                 try:
                     ds = xr.open_dataset(
                         file_path,
@@ -509,19 +507,15 @@ class AtmosphericDatasetPerVarNorm(Dataset):
                         engine='h5netcdf',
                         mask_and_scale=True,
                         phony_dims='sort',
-                        # НОВОЕ: отключаем кэширование для экономии дескрипторов
                         cache=False
                     )
-                except (OSError, IOError) as e:
-                    # Errno 107 или другие ошибки ФС
-                    if 'errno = 107' in str(e) or 'Transport endpoint' in str(e):
-                        print(f"  ⚠ Файл {file_idx+1}: ошибка ФС (errno 107), перезапуск через 2с...")
-                        # Принудительная очистка + пауза для восстановления ФС
+                except (OSError, IOError, RuntimeError) as e:
+                    error_str = str(e)
+                    if 'errno = 107' in error_str or 'Transport endpoint' in error_str or 'Unable to synchronously' in error_str:
+                        print(f"  ⚠ Файл {file_idx+1}: errno 107, пауза 2s...")
                         gc.collect()
-                        import time
                         time.sleep(2)
                         
-                        # Повторная попытка ОДИН раз
                         try:
                             ds = xr.open_dataset(
                                 file_path,
@@ -529,55 +523,52 @@ class AtmosphericDatasetPerVarNorm(Dataset):
                                 engine='h5netcdf',
                                 cache=False
                             )
+                            print(f"  ✓ Повтор успешен")
                         except Exception as retry_err:
-                            print(f"  ✗ Файл {file_idx+1}: повтор неудачен - {str(retry_err)[:100]}")
+                            print(f"  ✗ Повтор неудачен: {str(retry_err)[:80]}")
                             corrupted_files.append(file_path)
                             failed_files += 1
                             continue
                     else:
-                        raise  # Другие ошибки пробрасываем дальше
+                        raise
                 
-                # ============================================================
-                # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ #3: Идентификация измерений с fallback
-                # ============================================================
                 time_dim = next((c for c in ['valid_time', 'time', 't'] if c in ds.dims), None)
                 level_dim = next((c for c in ['pressure_level', 'level', 'plev', 'lev'] if c in ds.dims), None)
                 lat_dim = 'latitude' if 'latitude' in ds.dims else 'lat'
                 lon_dim = 'longitude' if 'longitude' in ds.dims else 'lon'
                 
                 if not time_dim or not level_dim:
-                    print(f"  ⚠ Файл {file_idx+1}: нет измерений (time={time_dim}, level={level_dim})")
+                    print(f"  ⚠ Файл {file_idx+1}: нет измерений")
                     failed_files += 1
-                    # Принудительное закрытие перед continue
                     if ds is not None:
-                        ds.close()
+                        try:
+                            ds.close()
+                        except:
+                            pass
                         ds = None
                     continue
                 
-                # ============================================================
-                # ОПТИМИЗАЦИЯ #1: Однократный sel для всех уровней
-                # ============================================================
                 ds_subset = ds.sel({level_dim: all_levels}, method='nearest')
-                
-                # НОВОЕ: Явная загрузка в память + закрытие файла
                 ds_subset = ds_subset.load()
                 
-                # КРИТИЧНО: Закрываем исходный dataset СРАЗУ после load()
-                ds.close()
-                ds = None  # Обнуляем ссылку
+                try:
+                    ds.close()
+                except:
+                    pass
+                finally:
+                    ds = None
                 
                 n_times = min(2, len(ds_subset[time_dim]))
                 
                 for time_idx in range(n_times):
                     try:
-                        # ============================================================
-                        # ОПТИМИЗАЦИЯ #2: Стек всех переменных
-                        # ============================================================
                         var_arrays = []
                         for var_dataset in var_mapping.values():
                             if var_dataset not in ds_subset:
                                 raise KeyError(f"Переменная {var_dataset} отсутствует")
-                            var_arrays.append(ds_subset[var_dataset].isel({time_dim: time_idx}).values)
+                            var_arrays.append(
+                                ds_subset[var_dataset].isel({time_dim: time_idx}).values
+                            )
                         
                         all_vars_stack = np.stack(var_arrays, axis=0)
                         valid_mask = np.all(np.isfinite(all_vars_stack), axis=(0, 1))
@@ -585,9 +576,6 @@ class AtmosphericDatasetPerVarNorm(Dataset):
                         if not np.any(valid_mask):
                             continue
                         
-                        # ============================================================
-                        # ОПТИМИЗАЦИЯ #3: Прямая случайная выборка
-                        # ============================================================
                         lat_indices, lon_indices = np.where(valid_mask)
                         n_valid = len(lat_indices)
                         n_samples = min(7000, n_valid)
@@ -598,12 +586,11 @@ class AtmosphericDatasetPerVarNorm(Dataset):
                         if file_idx == 0 and time_idx == 0:
                             print(f"  Файл 1, срез 0: {n_valid} валидных → выбрано {n_samples}")
                         
-                        # ============================================================
-                        # ОПТИМИЗАЦИЯ #4: Векторизованная экстракция
-                        # ============================================================
                         profiles_data = {}
                         for var_internal, var_dataset in var_mapping.items():
-                            var_full = all_vars_stack[list(var_mapping.values()).index(var_dataset)]
+                            var_full = all_vars_stack[
+                                list(var_mapping.values()).index(var_dataset)
+                            ]
                             profiles_var = var_full[:, lat_sel, lon_sel]
                             profiles_data[f'{var_internal}_input'] = profiles_var[:n_input_levels].T
                             profiles_data[f'{var_internal}_output'] = profiles_var[n_input_levels:].T
@@ -616,63 +603,55 @@ class AtmosphericDatasetPerVarNorm(Dataset):
                             self.profiles.append(profile)
                     
                     except (KeyError, ValueError, IndexError) as e:
-                        print(f"  ⚠ Файл {file_idx+1}, срез {time_idx}: ошибка данных - {str(e)[:80]}")
+                        print(f"  ⚠ Файл {file_idx+1}, срез {time_idx}: {str(e)[:60]}")
                         continue
                 
-                # Успешная обработка
                 successful_files += 1
                 if (file_idx + 1) % 10 == 0 or file_idx < 5:
-                    print(f"  Файл {file_idx+1}/{len(data_files)}: {len(self.profiles)} профилей всего")
+                    print(f"  Файл {file_idx+1}/{len(data_files)}: {len(self.profiles)} профилей")
             
             except Exception as e:
-                # Универсальный обработчик для непредвиденных ошибок
-                error_msg = str(e)[:200]
+                error_msg = str(e)[:150]
                 print(f"  ✗ ОШИБКА файла {file_idx+1}: {error_msg}")
                 corrupted_files.append(file_path)
                 failed_files += 1
             
             finally:
-                # ============================================================
-                # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ #4: Гарантированная очистка
-                # ============================================================
+                if ds_subset is not None:
+                    try:
+                        del ds_subset
+                    except:
+                        pass
+                
                 if ds is not None:
                     try:
                         ds.close()
                     except:
-                        pass  # Игнорируем ошибки при закрытии
+                        pass
                     finally:
                         ds = None
                 
-                # Принудительная сборка мусора каждые 20 файлов
                 if (file_idx + 1) % 20 == 0:
                     gc.collect()
         
-        # ============================================================
-        # Итоговая статистика
-        # ============================================================
         print(f"\n{'='*80}")
         print(f"ИТОГИ ЗАГРУЗКИ:")
-        print(f"  ✓ Успешно обработано: {successful_files}/{len(data_files)}")
+        print(f"  ✓ Успешно: {successful_files}/{len(data_files)}")
         print(f"  ✗ Ошибок: {failed_files}")
-        print(f"  📊 Всего профилей: {len(self.profiles)}")
+        print(f"  📊 Профилей: {len(self.profiles)}")
         
         if corrupted_files:
-            print(f"\n⚠ Поврежденные файлы ({len(corrupted_files)}):")
-            for cf in corrupted_files[:10]:  # Показываем первые 10
+            print(f"\n⚠ Поврежденных файлов: {len(corrupted_files)}")
+            for cf in corrupted_files[:5]:
                 print(f"    - {os.path.basename(cf)}")
-            if len(corrupted_files) > 10:
-                print(f"    ... и еще {len(corrupted_files) - 10}")
+            if len(corrupted_files) > 5:
+                print(f"    ... и еще {len(corrupted_files) - 5}")
         print(f"{'='*80}\n")
         
-        # Проверка минимального количества данных
         if len(self.profiles) < 10000:
             raise RuntimeError(
-                f"Недостаточно данных для обучения: {len(self.profiles)} профилей "
-                f"(минимум 10,000). Проверьте целостность файлов."
+                f"Недостаточно данных: {len(self.profiles)} профилей (минимум 10,000)"
             )
-`
-
-
 
     def _compute_per_variable_stats(self):
         print("\nВычисление статистики ПО ПЕРЕМЕННЫМ...")
